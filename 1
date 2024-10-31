@@ -1,0 +1,142 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { Checkbox, FormControlLabel, FormGroup } from '@material-ui/core';
+import handleEvent from '@pega/react-sdk-components/lib/components/helpers/event-utils';
+import { updateNewInstuctions } from '@pega/react-sdk-components/lib/components/helpers/instructions-utils';
+import { PConnFieldProps } from '@pega/react-sdk-components/lib/types/PConnProps';
+import { useTranslation } from 'react-i18next';
+
+interface HmrcOdxGoBackGoBackProps extends Omit<PConnFieldProps, 'value'> {
+  value?: boolean;
+  caption?: string;
+  selectionList?: any[];
+  referenceList: string;
+}
+
+const CONTROL_OVERRIDE_KEY = 'overrideControl';
+
+const HmrcOdxGoBackGoBack: React.FC<HmrcOdxGoBackGoBackProps> = ({
+  getPConnect,
+  caption,
+  value = false,
+  readOnly = false,
+  testId,
+  disabled = false,
+  selectionList = [],
+  referenceList,
+}) => {
+  const thePConn = getPConnect();
+  const actionsApi = thePConn.getActionsApi();
+  const propName = (thePConn.getStateProps() as { value: string }).value;
+  const { t } = useTranslation();
+
+  const [checked, setChecked] = useState<boolean>(!value);
+  const [clickable, setClickable] = useState<boolean>(true);
+  const [overrideControl, setOverrideControl] = useState<boolean>(Boolean(value));
+
+  const assignmentDivRef = useRef<HTMLElement | null>(null);
+  const mainContentRef = useRef<HTMLElement | null>(null);
+  const backLinkRef = useRef<HTMLAnchorElement | null>(null);
+
+  // Initialize references
+  useEffect(() => {
+    assignmentDivRef.current = document.getElementById('Assignment');
+    mainContentRef.current = document.getElementById('main-content');
+  }, []);
+
+  // Manage back link and control override based on `value`
+  useEffect(() => {
+    if (!assignmentDivRef.current || !mainContentRef.current) return;
+
+    const isValueTrue = String(value) === 'true';
+    setChecked(!isValueTrue);
+    setOverrideControl(isValueTrue);
+    sessionStorage.setItem(CONTROL_OVERRIDE_KEY, String(isValueTrue));
+
+    handleEvent(actionsApi, 'changeNblur', propName, String(!isValueTrue));
+
+    // Function to clean up existing back links
+    const removeBackLinks = () => {
+      document.querySelectorAll('.govuk-back-link').forEach(link => link.remove());
+    };
+    removeBackLinks();
+
+    // Create the back link element and set up its properties
+    const backLink = document.createElement('a');
+    backLink.href = '#';
+    backLink.className = 'govuk-back-link';
+    backLink.innerText = t(isValueTrue ? 'BACK-R' : 'BACK');
+    backLink.id = 'dynamic-back-link';
+    backLink.addEventListener('click', handleBackClick);
+
+    // Store reference to the created link for cleanup
+    backLinkRef.current = backLink;
+    assignmentDivRef.current.insertAdjacentElement('beforebegin', backLink);
+
+    return () => {
+      // Clean up event listeners and remove the back link on unmount
+      backLink.removeEventListener('click', handleBackClick);
+      backLink.remove();
+    };
+  }, [value, actionsApi, propName, t]);
+
+  // Update instructions if `referenceList` is updated
+  useEffect(() => {
+    if (referenceList.length > 0) {
+      thePConn.setReferenceList(selectionList);
+      updateNewInstuctions(thePConn, selectionList);
+    }
+  }, [referenceList, selectionList, thePConn]);
+
+  const handleBackClick = (event: MouseEvent) => {
+    event.preventDefault();
+    if (!clickable) return;
+
+    setClickable(false);
+    if (overrideControl) {
+      PCore.getPubSubUtils().publish('CUSTOM_EVENT_BACK', {});
+    } else {
+      setChecked(true);
+      handleEvent(actionsApi, 'changeNblur', propName, 'true');
+      const continueButton = document.querySelector<HTMLElement>('.govuk-button');
+      continueButton?.click();
+    }
+  };
+
+  const handleCheckboxChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (overrideControl) return;
+    const isChecked = event.target.checked;
+    setChecked(isChecked);
+    handleEvent(actionsApi, 'changeNblur', propName, isChecked.toString());
+  };
+
+  return (
+    <div className='govuk-visually-hidden' aria-hidden='true' tabIndex={-1}>
+      <FormGroup tabIndex={-1} aria-hidden='true'>
+        {!overrideControl && (
+          <FormControlLabel
+            control={
+              <Checkbox
+                id='GoBackCheckBox'
+                color='primary'
+                checked={checked}
+                onChange={!readOnly ? handleCheckboxChange : undefined}
+                value={value}
+                disabled={disabled}
+                readOnly={readOnly}
+                aria-hidden='true'
+                tabIndex={-1}
+              />
+            }
+            label={caption}
+            labelPlacement='end'
+            data-test-id={testId}
+            aria-hidden='true'
+            tabIndex={-1}
+          />
+        )}
+      </FormGroup>
+    </div>
+  );
+};
+
+export default HmrcOdxGoBackGoBack;
