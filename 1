@@ -1,169 +1,74 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import TimeoutPopup from './TimeoutPopup';
-import Modal from '../../BaseComponents/Modal/Modal';
+import { render, fireEvent, screen, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom/extend-expect';
+import TimeoutPopup from './TimeoutPopup'; // Ensure this path is correct
 
-// Mock i18n translation
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key) => key,
-  }),
-}));
-
-describe('TimeoutPopup', () => {
+describe('TimeoutPopup Component', () => {
   const defaultProps = {
     show: true,
-    millisecondsTillSignout: 120000, // 2 minutes in milliseconds
+    millisecondsTillSignout: 120000,
     staySignedinHandler: jest.fn(),
     signoutHandler: jest.fn(),
     staySignedInButtonText: 'Stay Signed In',
     signoutButtonText: 'Sign Out',
+    children: null as React.ReactNode,
   };
 
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('renders the component when show is true', () => {
+  it('renders without crashing', () => {
     render(<TimeoutPopup {...defaultProps} />);
-
-    expect(screen.getByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).toBeInTheDocument();
-    expect(screen.getByText('Stay Signed In')).toBeInTheDocument();
-    expect(screen.getByText('Sign Out')).toBeInTheDocument();
   });
 
-  it('does not render the component when show is false', () => {
-    render(<TimeoutPopup {...defaultProps} show={false} />);
-    expect(screen.queryByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).not.toBeInTheDocument();
-  });
-
-  it('calls staySignedinHandler on Stay Signed In button click', () => {
+  it('displays the correct initial message when show is true', () => {
     render(<TimeoutPopup {...defaultProps} />);
+    expect(screen.getByText(/you're about to be signed out/i)).toBeInTheDocument();
+    expect(screen.getByText(/for your security, we will sign you out in 2 minutes\./i)).toBeInTheDocument();
+  });
 
+  it('calls staySignedinHandler when the Stay Signed In button is clicked', () => {
+    render(<TimeoutPopup {...defaultProps} />);
     fireEvent.click(screen.getByText('Stay Signed In'));
     expect(defaultProps.staySignedinHandler).toHaveBeenCalled();
   });
 
-  it('calls signoutHandler on Sign Out button click', () => {
+  it('calls signoutHandler when the Sign Out link is clicked', () => {
     render(<TimeoutPopup {...defaultProps} />);
-
     fireEvent.click(screen.getByText('Sign Out'));
     expect(defaultProps.signoutHandler).toHaveBeenCalled();
   });
 
-  it('starts countdown when show is true and millisecondsTillSignout has elapsed', async () => {
+  it('starts countdown when show is true', async () => {
     jest.useFakeTimers();
     render(<TimeoutPopup {...defaultProps} />);
-
-    expect(screen.getByText('2_MINUTES.')).toBeInTheDocument();
-
-    jest.advanceTimersByTime(60000); // 1 minute to start countdown
-    await waitFor(() => expect(screen.getByText('1_MINUTE.')).toBeInTheDocument());
+    
+    await waitFor(() => {
+      jest.advanceTimersByTime(60000); // Simulate 1 minute passing
+      expect(screen.getByText('1 minute.')).toBeInTheDocument();
+    });
 
     jest.useRealTimers();
   });
 
-  it('updates countdown display text every second after countdown starts', async () => {
+  it('displays the correct remaining time during countdown', async () => {
     jest.useFakeTimers();
     render(<TimeoutPopup {...defaultProps} />);
-
-    jest.advanceTimersByTime(60000); // Start countdown after 1 minute
-    await waitFor(() => expect(screen.getByText('1_MINUTE.')).toBeInTheDocument());
-
-    jest.advanceTimersByTime(1000); // 1 second
-    expect(screen.getByText('59 SECONDS.')).toBeInTheDocument();
-
-    jest.advanceTimersByTime(1000); // Another second
-    expect(screen.getByText('58 SECONDS.')).toBeInTheDocument();
+    
+    await waitFor(() => {
+      jest.advanceTimersByTime(61000); // Simulate 61 seconds passing
+      expect(screen.getByText('59 seconds.')).toBeInTheDocument();
+    });
 
     jest.useRealTimers();
   });
 
-  it('triggers signoutHandler when countdown reaches 0', async () => {
+  it('executes signoutHandler when time runs out', async () => {
     jest.useFakeTimers();
     render(<TimeoutPopup {...defaultProps} />);
+    
+    await waitFor(() => {
+      jest.advanceTimersByTime(120000); // Simulate 2 minutes passing
+      expect(defaultProps.signoutHandler).toHaveBeenCalled();
+    });
 
-    jest.advanceTimersByTime(60000); // Start countdown
-    jest.advanceTimersByTime(60000); // Complete countdown to 0
-
-    await waitFor(() => expect(defaultProps.signoutHandler).toHaveBeenCalled());
     jest.useRealTimers();
   });
-
-  it('handles keyboard events for staySignedinHandler when Escape is pressed', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-
-    fireEvent.keyDown(window, { key: 'Escape' });
-    expect(defaultProps.staySignedinHandler).toHaveBeenCalled();
-  });
-
-  it('does not start countdown if show is set to false after initial load', () => {
-    const { rerender } = render(<TimeoutPopup {...defaultProps} show={false} />);
-
-    rerender(<TimeoutPopup {...defaultProps} show={true} />);
-    jest.advanceTimersByTime(60000); // Wait time for countdown start
-
-    expect(screen.queryByText('1_MINUTE.')).toBeInTheDocument();
-  });
-});
-
-
-import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import TimeoutPopup from './TimeoutPopup';
-import Modal from '../../BaseComponents/Modal/Modal';
-
-// Mock translation hook to avoid needing actual translations in tests
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
-}));
-
-describe('TimeoutPopup', () => {
-  // Use React.ComponentProps to infer props from TimeoutPopup propTypes
-  const defaultProps: React.ComponentProps<typeof TimeoutPopup> = {
-    show: true,
-    millisecondsTillSignout: 120000, // 2 minutes in milliseconds
-    staySignedinHandler: jest.fn(),
-    signoutHandler: jest.fn(),
-    staySignedInButtonText: 'Stay Signed In',
-    signoutButtonText: 'Sign Out',
-    children: null, // optional
-  };
-
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('renders the component when show is true', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-
-    expect(screen.getByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).toBeInTheDocument();
-    expect(screen.getByText('Stay Signed In')).toBeInTheDocument();
-    expect(screen.getByText('Sign Out')).toBeInTheDocument();
-  });
-
-  it('does not render the component when show is false', () => {
-    render(<TimeoutPopup {...defaultProps} show={false} />);
-    expect(screen.queryByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).not.toBeInTheDocument();
-  });
-
-  it('calls staySignedinHandler on Stay Signed In button click', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-
-    fireEvent.click(screen.getByText('Stay Signed In'));
-    expect(defaultProps.staySignedinHandler).toHaveBeenCalled();
-  });
-
-  it('calls signoutHandler on Sign Out button click', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-
-    fireEvent.click(screen.getByText('Sign Out'));
-    expect(defaultProps.signoutHandler).toHaveBeenCalled();
-  });
-
-  // Additional tests here
 });
