@@ -107,3 +107,63 @@ describe('TimeoutPopup', () => {
     expect(screen.queryByText('1_MINUTE.')).toBeInTheDocument();
   });
 });
+
+
+import React from 'react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import '@testing-library/jest-dom';
+import TimeoutPopup from './TimeoutPopup';
+import Modal from '../../BaseComponents/Modal/Modal';
+
+// Mock translation hook to avoid needing actual translations in tests
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key: string) => key,
+  }),
+}));
+
+describe('TimeoutPopup', () => {
+  // Use React.ComponentProps to infer props from TimeoutPopup propTypes
+  const defaultProps: React.ComponentProps<typeof TimeoutPopup> = {
+    show: true,
+    millisecondsTillSignout: 120000, // 2 minutes in milliseconds
+    staySignedinHandler: jest.fn(),
+    signoutHandler: jest.fn(),
+    staySignedInButtonText: 'Stay Signed In',
+    signoutButtonText: 'Sign Out',
+    children: null, // optional
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('renders the component when show is true', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+
+    expect(screen.getByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).toBeInTheDocument();
+    expect(screen.getByText('Stay Signed In')).toBeInTheDocument();
+    expect(screen.getByText('Sign Out')).toBeInTheDocument();
+  });
+
+  it('does not render the component when show is false', () => {
+    render(<TimeoutPopup {...defaultProps} show={false} />);
+    expect(screen.queryByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).not.toBeInTheDocument();
+  });
+
+  it('calls staySignedinHandler on Stay Signed In button click', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('Stay Signed In'));
+    expect(defaultProps.staySignedinHandler).toHaveBeenCalled();
+  });
+
+  it('calls signoutHandler on Sign Out button click', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+
+    fireEvent.click(screen.getByText('Sign Out'));
+    expect(defaultProps.signoutHandler).toHaveBeenCalled();
+  });
+
+  // Additional tests here
+});
