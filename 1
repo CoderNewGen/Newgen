@@ -1,214 +1,62 @@
-import React, { useEffect, useCallback, useReducer } from 'react';
-import Modal from '../../BaseComponents/Modal/Modal';
-import Button from '../../BaseComponents/Button/Button';
-import { useTranslation } from 'react-i18next';
-import PropTypes from 'prop-types';
+import React from 'react';
+import { render, screen, fireEvent, act } from '@testing-library/react';
+import TimeoutPopup from './TimeoutPopup';
+import '@testing-library/jest-dom/extend-expect';
 
-interface TimeoutState {
-  countdownStart: boolean;
-  timeRemaining: number;
-  screenReaderCountdown: string;
-}
+// Mock for useTranslation
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key) => key,
+  }),
+}));
 
-type TimeoutAction =
-  | { type: 'START_COUNTDOWN'; payload: boolean }
-  | { type: 'UPDATE_TIME_REMAINING'; payload: number }
-  | { type: 'UPDATE_SCREEN_READER_COUNTDOWN'; payload: string };
+describe('TimeoutPopup Component', () => {
+  const mockStaySignedinHandler = jest.fn();
+  const mockSignoutHandler = jest.fn();
 
-const COUNTDOWN_START_OFFSET = 60000;
-const INITIAL_TIME_REMAINING = 60;
-const UPDATE_INTERVAL = 1000;
-const SIGNOUT_DELAY = 1000;  // delay after showing "0 seconds"
-const SCREEN_READER_UPDATE_INTERVAL = 20;
-
-export default function TimeoutPopup(props) {
-  const {
-    show,
-    millisecondsTillSignout,
-    staySignedinHandler,
-    signoutHandler,
-    staySignedInButtonText,
-    signoutButtonText,
-    children
-  } = props;
-
-  const staySignedInCallback = useCallback(
-    event => {
-      if (event.key === 'Escape') staySignedinHandler();
-    },
-    [staySignedinHandler]
-  );
-
-  const { t } = useTranslation();
-
-  const initialTimeoutState: TimeoutState = {
-    countdownStart: false,
-    timeRemaining: INITIAL_TIME_REMAINING,
-    screenReaderCountdown: ''
+  const defaultProps = {
+    show: true,
+    millisecondsTillSignout: 120000, // 2 minutes
+    staySignedinHandler: mockStaySignedinHandler,
+    signoutHandler: mockSignoutHandler,
+    staySignedInButtonText: 'Stay Signed In',
+    signoutButtonText: 'Sign Out',
   };
 
-  const reducer = (state: TimeoutState, action: TimeoutAction) => {
-    switch (action.type) {
-      case 'START_COUNTDOWN':
-        return { ...state, countdownStart: action.payload };
-      case 'UPDATE_TIME_REMAINING':
-        return { ...state, timeRemaining: action.payload };
-      case 'UPDATE_SCREEN_READER_COUNTDOWN':
-        return { ...state, screenReaderCountdown: action.payload };
-      default:
-        return state;
-    }
-  };
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-  const [timeoutState, dispatch] = useReducer(reducer, initialTimeoutState);
+  it('renders correctly when shown', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+    expect(screen.getByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).toBeInTheDocument();
+    expect(screen.getByText('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')).toBeInTheDocument();
+    expect(screen.getByText('Stay Signed In')).toBeInTheDocument();
+    expect(screen.getByText('Sign Out')).toBeInTheDocument();
+  });
 
-  useEffect(() => {
-    if (!show) {
-      dispatch({ type: 'UPDATE_TIME_REMAINING', payload: INITIAL_TIME_REMAINING });
-      dispatch({ type: 'UPDATE_SCREEN_READER_COUNTDOWN', payload: '' });
-      dispatch({ type: 'START_COUNTDOWN', payload: false });
-    } else {
-      const milisecondsTilCountdown = millisecondsTillSignout - COUNTDOWN_START_OFFSET;
-      const countdownTimeout = setTimeout(() => {
-        dispatch({ type: 'START_COUNTDOWN', payload: true });
-      }, milisecondsTilCountdown);
+  it('renders children when provided', () => {
+    render(<TimeoutPopup {...defaultProps}>Test Children</TimeoutPopup>);
+    expect(screen.getByText('Test Children')).toBeInTheDocument();
+  });
 
-      return () => {
-        clearTimeout(countdownTimeout);
-      };
-    }
-  }, [show]);
+  it('calls staySignedinHandler when "Stay Signed In" button is clicked', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+    fireEvent.click(screen.getByText('Stay Signed In'));
+    expect(mockStaySignedinHandler).toHaveBeenCalled();
+  });
 
-  useEffect(() => {
-    if (timeoutState.countdownStart) {
-      if (timeoutState.timeRemaining === INITIAL_TIME_REMAINING) {
-        dispatch({
-          type: 'UPDATE_SCREEN_READER_COUNTDOWN',
-          payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${t('1_MINUTE')}`
-        });
-      }
+  it('calls signoutHandler when "Sign Out" button is clicked', () => {
+    render(<TimeoutPopup {...defaultProps} />);
+    fireEvent.click(screen.getByText('Sign Out'));
+    expect(mockSignoutHandler).toHaveBeenCalled();
+  });
 
-      const timeRemainingInterval = setInterval(() => {
-        const newTimeRemaining = timeoutState.timeRemaining - 1;
+  it('starts countdown after a delay and updates screen reader text', () => {
+    jest.useFakeTimers();
 
-        if (newTimeRemaining >= 0) {
-          dispatch({ type: 'UPDATE_TIME_REMAINING', payload: newTimeRemaining });
-        }
+    render(<TimeoutPopup {...defaultProps} />);
 
-        if (newTimeRemaining === 0) {
-          dispatch({
-            type: 'UPDATE_SCREEN_READER_COUNTDOWN',
-            payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} 0 ${t('SECONDS')}`
-          });
-
-          // Delay signout to allow "0 seconds" to be displayed
-          setTimeout(() => {
-            signoutHandler();
-          }, SIGNOUT_DELAY);
-        }
-      }, UPDATE_INTERVAL);
-
-      return () => clearInterval(timeRemainingInterval);
-    }
-  }, [timeoutState.countdownStart, timeoutState.timeRemaining]);
-
-  useEffect(() => {
-    if (
-      timeoutState.timeRemaining < INITIAL_TIME_REMAINING &&
-      timeoutState.timeRemaining % SCREEN_READER_UPDATE_INTERVAL === 0
-    ) {
-      dispatch({
-        type: 'UPDATE_SCREEN_READER_COUNTDOWN',
-        payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${timeoutState.timeRemaining} ${t(
-          'SECONDS'
-        )}`
-      });
-    }
-  }, [timeoutState.timeRemaining]);
-
-  useEffect(() => {
-    if (show) {
-      window.addEventListener('keydown', staySignedInCallback);
-    } else {
-      window.removeEventListener('keydown', staySignedInCallback);
-    }
-    return () => {
-      window.removeEventListener('keydown', staySignedInCallback);
-    };
-  }, [show]);
-
-  const timeoutText = () => {
-    const { countdownStart, timeRemaining } = timeoutState;
-
-    if (countdownStart) {
-      if (timeRemaining === 60) {
-        return `${t('1_MINUTE')}.`;
-      } else if (timeRemaining === 1) {
-        return `${timeRemaining} ${t('SECOND')}.`;
-      } else if (timeRemaining <= 0) {
-        return `0 ${t('SECONDS')}.`;  // Display "0 seconds"
-      } else if (timeRemaining < 60) {
-        return `${timeRemaining} ${t('SECONDS')}.`;
-      }
-    }
-
-    return `${t('2_MINUTES')}.`;
-  };
-
-  if (children) {
-    return (
-      <Modal show={show} id='timeout-popup'>
-        <div>
-          {children}
-          <div className='govuk-button-group govuk-!-padding-top-4'>
-            <Button type='button' onClick={staySignedinHandler}>
-              {staySignedInButtonText}
-            </Button>
-
-            <a id='modal-signout-btn' className='govuk-link' href='#' onClick={signoutHandler}>
-              {signoutButtonText}
-            </a>
-          </div>
-        </div>
-      </Modal>
-    );
-  }
-
-  return (
-    <Modal show={show} id='timeout-popup'>
-      <div>
-        <h1 id='govuk-timeout-heading' className='govuk-heading-m push--top'>
-          {t('YOURE_ABOUT_TO_BE_SIGNED_OUT')}
-        </h1>
-        <p className='govuk-body'>
-          {`${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} `}
-          <span className='govuk-!-font-weight-bold'>{timeoutText()}</span>
-          {timeoutState.countdownStart && (
-            <span className='govuk-visually-hidden' aria-live='polite'>
-              {timeoutState.screenReaderCountdown}
-            </span>
-          )}
-        </p>
-        <div className='govuk-button-group govuk-!-padding-top-4'>
-          <Button type='button' onClick={staySignedinHandler}>
-            {t('STAY_SIGNED_IN')}
-          </Button>
-
-          <a id='modal-staysignin-btn' className='govuk-link' href='#' onClick={signoutHandler}>
-            {t('SIGN-OUT')}
-          </a>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-TimeoutPopup.propTypes = {
-  show: PropTypes.bool,
-  millisecondsTillSignout: PropTypes.number,
-  staySignedinHandler: PropTypes.func,
-  signoutHandler: PropTypes.func,
-  staySignedInButtonText: PropTypes.string,
-  signoutButtonText: PropTypes.string,
-  children: PropTypes.any
-};
+    // Countdown should start after millisecondsTillSignout - COUNTDOWN_START_OFFSET
+    act(() => {
+      jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
