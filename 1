@@ -1,112 +1,211 @@
-useEffect(() => {
-  if (timeoutState.countdownStart) {
-    if (timeoutState.timeRemaining === INITIAL_TIME_REMAINING) {
-      dispatch({
-        type: 'UPDATE_SCREEN_READER_COUNTDOWN',
-        payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${t('1_MINUTE')}`
-      });
-    }
+import React, { useEffect, useCallback, useReducer } from 'react';
+import Modal from '../../BaseComponents/Modal/Modal';
+import Button from '../../BaseComponents/Button/Button';
+import { useTranslation } from 'react-i18next';
+import PropTypes from 'prop-types';
 
-    if (timeoutState.timeRemaining < 0) return; // Prevents negative values
+interface TimeoutState {
+  countdownStart: boolean;
+  timeRemaining: number;
+  screenReaderCountdown: string;
+}
 
-    const timeRemainingInterval = setInterval(() => {
-      const newTimeRemaining = timeoutState.timeRemaining - 1;
+type TimeoutAction =
+  | { type: 'START_COUNTDOWN'; payload: boolean }
+  | { type: 'UPDATE_TIME_REMAINING'; payload: number }
+  | { type: 'UPDATE_SCREEN_READER_COUNTDOWN'; payload: string };
 
-      if (newTimeRemaining >= 0) {
-        dispatch({ type: 'UPDATE_TIME_REMAINING', payload: newTimeRemaining });
-      }
-      
-      // Check if we should display "0 seconds remaining"
-      if (newTimeRemaining === 0) {
-        dispatch({
-          type: 'UPDATE_SCREEN_READER_COUNTDOWN',
-          payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} 0 ${t('SECONDS')}`
-        });
-        
-        // Wait briefly before calling signoutHandler to allow display update
-        setTimeout(signoutHandler, SIGNOUT_DELAY);
-      }
-    }, UPDATE_INTERVAL);
+const COUNTDOWN_START_OFFSET = 60000;
+const INITIAL_TIME_REMAINING = 60;
+const UPDATE_INTERVAL = 1000;
+const SIGNOUT_DELAY = 1000;
+const SCREEN_READER_UPDATE_INTERVAL = 20;
 
-    return () => clearInterval(timeRemainingInterval);
-  }
-}, [timeoutState.countdownStart, timeoutState.timeRemaining]);
+export default function TimeoutPopup(props) {
+  const {
+    show,
+    millisecondsTillSignout,
+    staySignedinHandler,
+    signoutHandler,
+    staySignedInButtonText,
+    signoutButtonText,
+    children
+  } = props;
 
+  const staySignedInCallback = useCallback(
+    event => {
+      if (event.key === 'Escape') staySignedinHandler();
+    },
+    [staySignedinHandler]
+  );
 
+  const { t } = useTranslation();
 
-
-
-import React from 'react';
-import { render, fireEvent, screen, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom/extend-expect';
-import TimeoutPopup from './TimeoutPopup'; // Ensure this path is correct
-
-describe('TimeoutPopup Component', () => {
-  const defaultProps = {
-    show: true,
-    millisecondsTillSignout: 120000,
-    staySignedinHandler: jest.fn(),
-    signoutHandler: jest.fn(),
-    staySignedInButtonText: 'Stay Signed In',
-    signoutButtonText: 'Sign Out',
-    children: null as React.ReactNode,
+  const initialTimeoutState: TimeoutState = {
+    countdownStart: false,
+    timeRemaining: INITIAL_TIME_REMAINING,
+    screenReaderCountdown: ''
   };
 
-  it('renders without crashing', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-  });
+  const reducer = (state: TimeoutState, action: TimeoutAction) => {
+    switch (action.type) {
+      case 'START_COUNTDOWN':
+        return { ...state, countdownStart: action.payload };
+      case 'UPDATE_TIME_REMAINING':
+        return { ...state, timeRemaining: action.payload };
+      case 'UPDATE_SCREEN_READER_COUNTDOWN':
+        return { ...state, screenReaderCountdown: action.payload };
+      default:
+        return state;
+    }
+  };
 
-  it('displays the correct initial message when show is true', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-    expect(screen.getByText(/you're about to be signed out/i)).toBeInTheDocument();
-    expect(screen.getByText(/for your security, we will sign you out in 2 minutes\./i)).toBeInTheDocument();
-  });
+  const [timeoutState, dispatch] = useReducer(reducer, initialTimeoutState);
 
-  it('calls staySignedinHandler when the Stay Signed In button is clicked', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-    fireEvent.click(screen.getByText('Stay Signed In'));
-    expect(defaultProps.staySignedinHandler).toHaveBeenCalled();
-  });
+  useEffect(() => {
+    if (!show) {
+      dispatch({ type: 'UPDATE_TIME_REMAINING', payload: INITIAL_TIME_REMAINING });
+      dispatch({ type: 'UPDATE_SCREEN_READER_COUNTDOWN', payload: '' });
+      dispatch({ type: 'START_COUNTDOWN', payload: false });
+    } else {
+      const milisecondsTilCountdown = millisecondsTillSignout - COUNTDOWN_START_OFFSET;
+      const countdownTimeout = setTimeout(() => {
+        dispatch({ type: 'START_COUNTDOWN', payload: true });
+      }, milisecondsTilCountdown);
 
-  it('calls signoutHandler when the Sign Out link is clicked', () => {
-    render(<TimeoutPopup {...defaultProps} />);
-    fireEvent.click(screen.getByText('Sign Out'));
-    expect(defaultProps.signoutHandler).toHaveBeenCalled();
-  });
+      return () => {
+        clearTimeout(countdownTimeout);
+      };
+    }
+  }, [show]);
 
-  it('starts countdown when show is true', async () => {
-    jest.useFakeTimers();
-    render(<TimeoutPopup {...defaultProps} />);
-    
-    await waitFor(() => {
-      jest.advanceTimersByTime(60000); // Simulate 1 minute passing
-      expect(screen.getByText('1 minute.')).toBeInTheDocument();
-    });
+  useEffect(() => {
+    if (timeoutState.countdownStart) {
+      if (timeoutState.timeRemaining === INITIAL_TIME_REMAINING) {
+        dispatch({
+          type: 'UPDATE_SCREEN_READER_COUNTDOWN',
+          payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${t('1_MINUTE')}`
+        });
+      }
 
-    jest.useRealTimers();
-  });
+      const timeRemainingInterval = setInterval(() => {
+        const newTimeRemaining = timeoutState.timeRemaining - 1;
 
-  it('displays the correct remaining time during countdown', async () => {
-    jest.useFakeTimers();
-    render(<TimeoutPopup {...defaultProps} />);
-    
-    await waitFor(() => {
-      jest.advanceTimersByTime(61000); // Simulate 61 seconds passing
-      expect(screen.getByText('59 seconds.')).toBeInTheDocument();
-    });
+        if (newTimeRemaining >= 0) {
+          dispatch({ type: 'UPDATE_TIME_REMAINING', payload: newTimeRemaining });
+        }
 
-    jest.useRealTimers();
-  });
+        if (newTimeRemaining === 0) {
+          dispatch({
+            type: 'UPDATE_SCREEN_READER_COUNTDOWN',
+            payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} 0 ${t('SECONDS')}`
+          });
 
-  it('executes signoutHandler when time runs out', async () => {
-    jest.useFakeTimers();
-    render(<TimeoutPopup {...defaultProps} />);
-    
-    await waitFor(() => {
-      jest.advanceTimersByTime(120000); // Simulate 2 minutes passing
-      expect(defaultProps.signoutHandler).toHaveBeenCalled();
-    });
+          setTimeout(signoutHandler, SIGNOUT_DELAY);
+        }
+      }, UPDATE_INTERVAL);
 
-    jest.useRealTimers();
-  });
-});
+      return () => clearInterval(timeRemainingInterval);
+    }
+  }, [timeoutState.countdownStart, timeoutState.timeRemaining]);
+
+  useEffect(() => {
+    if (
+      timeoutState.timeRemaining < INITIAL_TIME_REMAINING &&
+      timeoutState.timeRemaining % SCREEN_READER_UPDATE_INTERVAL === 0
+    ) {
+      dispatch({
+        type: 'UPDATE_SCREEN_READER_COUNTDOWN',
+        payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${timeoutState.timeRemaining} ${t(
+          'SECONDS'
+        )}`
+      });
+    }
+  }, [timeoutState.timeRemaining]);
+
+  useEffect(() => {
+    if (show) {
+      window.addEventListener('keydown', staySignedInCallback);
+    } else {
+      window.removeEventListener('keydown', staySignedInCallback);
+    }
+    return () => {
+      window.removeEventListener('keydown', staySignedInCallback);
+    };
+  }, [show]);
+
+  const timeoutText = () => {
+    const { countdownStart, timeRemaining } = timeoutState;
+
+    if (countdownStart) {
+      if (timeRemaining === 60) {
+        return `${t('1_MINUTE')}.`;
+      } else if (timeRemaining === 1) {
+        return `${timeRemaining} ${t('SECOND')}.`;
+      } else if (timeRemaining <= 0) {
+        return `0 ${t('SECONDS')}.`;
+      } else if (timeRemaining < 60) {
+        return `${timeRemaining} ${t('SECONDS')}.`;
+      }
+    }
+
+    return `${t('2_MINUTES')}.`;
+  };
+
+  if (children) {
+    return (
+      <Modal show={show} id='timeout-popup'>
+        <div>
+          {children}
+          <div className='govuk-button-group govuk-!-padding-top-4'>
+            <Button type='button' onClick={staySignedinHandler}>
+              {staySignedInButtonText}
+            </Button>
+
+            <a id='modal-signout-btn' className='govuk-link' href='#' onClick={signoutHandler}>
+              {signoutButtonText}
+            </a>
+          </div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal show={show} id='timeout-popup'>
+      <div>
+        <h1 id='govuk-timeout-heading' className='govuk-heading-m push--top'>
+          {t('YOURE_ABOUT_TO_BE_SIGNED_OUT')}
+        </h1>
+        <p className='govuk-body'>
+          {`${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} `}
+          <span className='govuk-!-font-weight-bold'>{timeoutText()}</span>
+          {timeoutState.countdownStart && (
+            <span className='govuk-visually-hidden' aria-live='polite'>
+              {timeoutState.screenReaderCountdown}
+            </span>
+          )}
+        </p>
+        <div className='govuk-button-group govuk-!-padding-top-4'>
+          <Button type='button' onClick={staySignedinHandler}>
+            {t('STAY_SIGNED_IN')}
+          </Button>
+
+          <a id='modal-staysignin-btn' className='govuk-link' href='#' onClick={signoutHandler}>
+            {t('SIGN-OUT')}
+          </a>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+TimeoutPopup.propTypes = {
+  show: PropTypes.bool,
+  millisecondsTillSignout: PropTypes.number,
+  staySignedinHandler: PropTypes.func,
+  signoutHandler: PropTypes.func,
+  staySignedInButtonText: PropTypes.string,
+  signoutButtonText: PropTypes.string,
+  children: PropTypes.any
+};
