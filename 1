@@ -1,3 +1,41 @@
+useEffect(() => {
+  if (timeoutState.countdownStart) {
+    if (timeoutState.timeRemaining === INITIAL_TIME_REMAINING) {
+      dispatch({
+        type: 'UPDATE_SCREEN_READER_COUNTDOWN',
+        payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} ${t('1_MINUTE')}`
+      });
+    }
+
+    if (timeoutState.timeRemaining < 0) return; // Prevents negative values
+
+    const timeRemainingInterval = setInterval(() => {
+      const newTimeRemaining = timeoutState.timeRemaining - 1;
+
+      if (newTimeRemaining >= 0) {
+        dispatch({ type: 'UPDATE_TIME_REMAINING', payload: newTimeRemaining });
+      }
+      
+      // Check if we should display "0 seconds remaining"
+      if (newTimeRemaining === 0) {
+        dispatch({
+          type: 'UPDATE_SCREEN_READER_COUNTDOWN',
+          payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} 0 ${t('SECONDS')}`
+        });
+        
+        // Wait briefly before calling signoutHandler to allow display update
+        setTimeout(signoutHandler, SIGNOUT_DELAY);
+      }
+    }, UPDATE_INTERVAL);
+
+    return () => clearInterval(timeRemainingInterval);
+  }
+}, [timeoutState.countdownStart, timeoutState.timeRemaining]);
+
+
+
+
+
 import React from 'react';
 import { render, fireEvent, screen, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom/extend-expect';
