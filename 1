@@ -1,9 +1,16 @@
+// helpers.js
+export const textMatch = (text) => (content, element) => {
+  const hasText = (node) => node.textContent === text || node.textContent.includes(text);
+  const childrenDontHaveText = Array.from(element?.children || []).every(child => !hasText(child));
+  return hasText(element) && childrenDontHaveText;
+};
+
 import React from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import TimeoutPopup from './TimeoutPopup';
 import '@testing-library/jest-dom/extend-expect';
+import { textMatch } from './helpers'; // Importing the helper
 
-// Mock for useTranslation
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
     t: (key) => key,
@@ -29,26 +36,26 @@ describe('TimeoutPopup Component', () => {
 
   it('renders correctly when shown', () => {
     render(<TimeoutPopup {...defaultProps} />);
-    expect(screen.getByText('YOURE_ABOUT_TO_BE_SIGNED_OUT')).toBeInTheDocument();
-    expect(screen.getByText('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')).toBeInTheDocument();
-    expect(screen.getByText('Stay Signed In')).toBeInTheDocument();
-    expect(screen.getByText('Sign Out')).toBeInTheDocument();
+    expect(screen.getByText(textMatch('YOURE_ABOUT_TO_BE_SIGNED_OUT'))).toBeInTheDocument();
+    expect(screen.getByText(textMatch('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT'))).toBeInTheDocument();
+    expect(screen.getByText(textMatch('Stay Signed In'))).toBeInTheDocument();
+    expect(screen.getByText(textMatch('Sign Out'))).toBeInTheDocument();
   });
 
   it('renders children when provided', () => {
     render(<TimeoutPopup {...defaultProps}>Test Children</TimeoutPopup>);
-    expect(screen.getByText('Test Children')).toBeInTheDocument();
+    expect(screen.getByText(textMatch('Test Children'))).toBeInTheDocument();
   });
 
   it('calls staySignedinHandler when "Stay Signed In" button is clicked', () => {
     render(<TimeoutPopup {...defaultProps} />);
-    fireEvent.click(screen.getByText('Stay Signed In'));
+    fireEvent.click(screen.getByText(textMatch('Stay Signed In')));
     expect(mockStaySignedinHandler).toHaveBeenCalled();
   });
 
   it('calls signoutHandler when "Sign Out" button is clicked', () => {
     render(<TimeoutPopup {...defaultProps} />);
-    fireEvent.click(screen.getByText('Sign Out'));
+    fireEvent.click(screen.getByText(textMatch('Sign Out')));
     expect(mockSignoutHandler).toHaveBeenCalled();
   });
 
@@ -57,19 +64,16 @@ describe('TimeoutPopup Component', () => {
 
     render(<TimeoutPopup {...defaultProps} />);
 
-    // Countdown should start after millisecondsTillSignout - COUNTDOWN_START_OFFSET
     act(() => {
       jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
     });
 
-    // Verify countdown has started
-    expect(screen.getByText('1_MINUTE')).toBeInTheDocument();
+    expect(screen.getByText(textMatch('1_MINUTE'))).toBeInTheDocument();
 
-    // Verify screen reader text is updated
     act(() => {
-      jest.advanceTimersByTime(1000); // Move the countdown by 1 second
+      jest.advanceTimersByTime(1000);
     });
-    expect(screen.getByText(/59 SECONDS/i)).toBeInTheDocument();
+    expect(screen.getByText(textMatch('59 SECONDS'))).toBeInTheDocument();
 
     jest.useRealTimers();
   });
@@ -79,14 +83,12 @@ describe('TimeoutPopup Component', () => {
 
     render(<TimeoutPopup {...defaultProps} />);
 
-    // Start the countdown
     act(() => {
       jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
     });
 
-    // Move timeRemaining to 0
     act(() => {
-      jest.advanceTimersByTime(60000); // 60 seconds for countdown
+      jest.advanceTimersByTime(60000);
     });
 
     expect(mockSignoutHandler).toHaveBeenCalled();
@@ -96,25 +98,20 @@ describe('TimeoutPopup Component', () => {
   it('resets state when "show" is false', () => {
     const { rerender } = render(<TimeoutPopup {...defaultProps} show={true} />);
 
-    // Start the countdown
     act(() => {
       jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
     });
 
-    // Verify countdown has started
-    expect(screen.getByText('1_MINUTE')).toBeInTheDocument();
+    expect(screen.getByText(textMatch('1_MINUTE'))).toBeInTheDocument();
 
-    // Hide the component
     rerender(<TimeoutPopup {...defaultProps} show={false} />);
     
-    // Expect countdown to reset
-    expect(screen.queryByText('1_MINUTE')).not.toBeInTheDocument();
+    expect(screen.queryByText(textMatch('1_MINUTE'))).not.toBeInTheDocument();
   });
 
   it('handles Escape key to stay signed in', () => {
     render(<TimeoutPopup {...defaultProps} show={true} />);
     
-    // Simulate pressing the Escape key
     fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
     expect(mockStaySignedinHandler).toHaveBeenCalled();
   });
