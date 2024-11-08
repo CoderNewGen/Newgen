@@ -18,7 +18,7 @@ type TimeoutAction =
 const COUNTDOWN_START_OFFSET = 60000;
 const INITIAL_TIME_REMAINING = 60;
 const UPDATE_INTERVAL = 1000;
-const SIGNOUT_DELAY = 1000;
+const SIGNOUT_DELAY = 1000;  // delay after showing "0 seconds"
 const SCREEN_READER_UPDATE_INTERVAL = 20;
 
 export default function TimeoutPopup(props) {
@@ -101,7 +101,10 @@ export default function TimeoutPopup(props) {
             payload: `${t('FOR_YOUR_SECURITY_WE_WILL_SIGN_YOU_OUT')} 0 ${t('SECONDS')}`
           });
 
-          setTimeout(signoutHandler, SIGNOUT_DELAY);
+          // Delay signout to allow "0 seconds" to be displayed
+          setTimeout(() => {
+            signoutHandler();
+          }, SIGNOUT_DELAY);
         }
       }, UPDATE_INTERVAL);
 
@@ -143,7 +146,7 @@ export default function TimeoutPopup(props) {
       } else if (timeRemaining === 1) {
         return `${timeRemaining} ${t('SECOND')}.`;
       } else if (timeRemaining <= 0) {
-        return `0 ${t('SECONDS')}.`;
+        return `0 ${t('SECONDS')}.`;  // Display "0 seconds"
       } else if (timeRemaining < 60) {
         return `${timeRemaining} ${t('SECONDS')}.`;
       }
