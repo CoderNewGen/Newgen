@@ -60,3 +60,62 @@ describe('TimeoutPopup Component', () => {
     // Countdown should start after millisecondsTillSignout - COUNTDOWN_START_OFFSET
     act(() => {
       jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
+    });
+
+    // Verify countdown has started
+    expect(screen.getByText('1_MINUTE')).toBeInTheDocument();
+
+    // Verify screen reader text is updated
+    act(() => {
+      jest.advanceTimersByTime(1000); // Move the countdown by 1 second
+    });
+    expect(screen.getByText(/59 SECONDS/i)).toBeInTheDocument();
+
+    jest.useRealTimers();
+  });
+
+  it('signs out automatically when timeRemaining reaches 0', () => {
+    jest.useFakeTimers();
+
+    render(<TimeoutPopup {...defaultProps} />);
+
+    // Start the countdown
+    act(() => {
+      jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
+    });
+
+    // Move timeRemaining to 0
+    act(() => {
+      jest.advanceTimersByTime(60000); // 60 seconds for countdown
+    });
+
+    expect(mockSignoutHandler).toHaveBeenCalled();
+    jest.useRealTimers();
+  });
+
+  it('resets state when "show" is false', () => {
+    const { rerender } = render(<TimeoutPopup {...defaultProps} show={true} />);
+
+    // Start the countdown
+    act(() => {
+      jest.advanceTimersByTime(defaultProps.millisecondsTillSignout - 60000);
+    });
+
+    // Verify countdown has started
+    expect(screen.getByText('1_MINUTE')).toBeInTheDocument();
+
+    // Hide the component
+    rerender(<TimeoutPopup {...defaultProps} show={false} />);
+    
+    // Expect countdown to reset
+    expect(screen.queryByText('1_MINUTE')).not.toBeInTheDocument();
+  });
+
+  it('handles Escape key to stay signed in', () => {
+    render(<TimeoutPopup {...defaultProps} show={true} />);
+    
+    // Simulate pressing the Escape key
+    fireEvent.keyDown(window, { key: 'Escape', code: 'Escape' });
+    expect(mockStaySignedinHandler).toHaveBeenCalled();
+  });
+});
