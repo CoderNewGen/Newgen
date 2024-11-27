@@ -1,44 +1,180 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { useTranslation } from 'react-i18next';
-import ShutterServicePage from './ShutterServicePage';
-import setPageTitle from '../../helpers/setPageTitleHelpers';
+// utils/getPageDataUtil.ts
+export interface DataPageResponse {
+  IsNormalAuthentication?: boolean;
+  PostAuthAction?: string;
+}
 
-// Mock dependencies
-jest.mock('react-i18next', () => ({
-  useTranslation: jest.fn(),
-}));
+export async function getPageDataAsync<T extends DataPageResponse>(
+  pageName: string,
+  context: string = 'root'
+): Promise<T | null> {
+  try {
+    const dataPage: Promise<T> = PCore.getDataPageUtils().getPageDataAsync(pageName, context) as Promise<T>;
+    return await dataPage;
+  } catch (error) {
+    console.error(`Error fetching data page ${pageName} with context ${context}:`, error);
+    
+    // Navigate to the API error page on failure
+    const apiErrorPageUrl = '/apierrorpage'; // Define your error page path here
+    window.location.replace(apiErrorPageUrl);
 
-jest.mock('../../helpers/setPageTitleHelpers', () => jest.fn());
+    return null; // This line is for type compatibility, though navigation interrupts execution
+  }
+}
 
-describe('ShutterServicePage', () => {
+// checkAuthAndRedirectIfTens.ts
+import { getPageDataAsync, DataPageResponse } from './utils/getPageDataUtil';
+
+async function checkAuthAndRedirectIfTens(): Promise<void> {
+  if (localStorage.getItem('tensCheckCarriedOut') === 'true') {
+    // After the redirect from TENS
+    localStorage.removeItem('tensCheckCarriedOut');
+    return;
+  }
+
+  const dataResponse = await getPageDataAsync<DataPageResponse>('D_PostCitizenAuthAction');
+  if (dataResponse?.IsNormalAuthentication === false && dataResponse?.PostAuthAction === 'TENS') {
+    localStorage.setItem('tensCheckCarriedOut', 'true');
+    const currentPage = window.location.href;
+    window.location.replace(
+      `https://www.tax.service.gov.uk/protect-tax-info?redirectUrl=${encodeURIComponent(currentPage)}`
+    ); // This will not work in Dev as this is only available in prod
+  }
+}
+
+export default checkAuthAndRedirectIfTens;
+
+
+import { getPageDataAsync } from './getPageDataUtil';
+
+const mockGetPageDataAsync = jest.fn();
+
+// Mock PCore global object
+(global as any).PCore = {
+  getDataPageUtils: () => ({
+    getPageDataAsync: mockGetPageDataAsync,
+  }),
+};
+
+// Mock window.location.replace
+const mockReplace = jest.fn();
+Object.defineProperty(window, 'location', {
+  writable: true,
+  value: { replace: mockReplace },
+});
+
+describe('getPageDataAsync', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    useTranslation.mockReturnValue({
-      t: (key) => key, // Simple mock for translations
-    });
   });
 
-  test('renders the component successfully', () => {
-    render(<ShutterServicePage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('SHUTTER_SERVICE_UNAVAILABLE');
-    expect(screen.getByText('SHUTTER_USE_SERVICE_LATER_MESSAGE')).toBeInTheDocument();
+  it('should return data when API call is successful', async () => {
+    const mockResponse = { IsNormalAuthentication: true, PostAuthAction: 'NONE' };
+    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
+
+    const result = await getPageDataAsync('D_PostCitizenAuthAction', 'root');
+
+    expect(result).toEqual(mockResponse);
+    expect(mockGetPageDataAsync).toHaveBeenCalledWith('D_PostCitizenAuthAction', 'root');
   });
 
-  test('calls setPageTitle on mount', () => {
-    render(<ShutterServicePage />);
-    expect(setPageTitle).toHaveBeenCalledTimes(1);
+  it('should navigate to /apierrorpage when API call fails', async () => {
+    mockGetPageDataAsync.mockRejectedValueOnce(new Error('API Error'));
+
+    const result = await getPageDataAsync('D_PostCitizenAuthAction', 'root');
+
+    expect(result).toBeNull();
+    expect(mockReplace).toHaveBeenCalledWith('/apierrorpage');
+    expect(console.error).toHaveBeenCalledWith(
+      'Error fetching data page D_PostCitizenAuthAction with context root:',
+      expect.any(Error)
+    );
+  });
+});
+
+import checkAuthAndRedirectIfTens from './checkAuthAndRedirectIfTens';
+import * as utils from './utils/getPageDataUtil';
+
+jest.mock('./utils/getPageDataUtil', () => ({
+  getPageDataAsync: jest.fn(),
+}));
+
+const mockGetPageDataAsync = utils.getPageDataAsync as jest.Mock;
+
+// Mock localStorage
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+
+  return {
+    getItem: jest.fn((key) => store[key] || null),
+    setItem: jest.fn((key, value) => {
+      store[key] = value;
+    }),
+    removeItem: jest.fn((key) => {
+      delete store[key];
+    }),
+    clear: jest.fn(() => {
+      store = {};
+    }),
+  };
+})();
+Object.defineProperty(window, 'localStorage', { value: localStorageMock });
+
+// Mock window.location.replace
+const mockReplace = jest.fn();
+Object.defineProperty(window, 'location', {
+  writable: true,
+  value: { replace: mockReplace, href: 'http://example.com/current' },
+});
+
+describe('checkAuthAndRedirectIfTens', () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    localStorageMock.clear();
   });
 
-  test('renders with the correct language based on sessionStorage', () => {
-    sessionStorage.setItem('rsdk_locale', 'fr-FR');
-    render(<ShutterServicePage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('SHUTTER_SERVICE_UNAVAILABLE');
+  it('should remove tensCheckCarriedOut from localStorage if already carried out', async () => {
+    localStorageMock.setItem('tensCheckCarriedOut', 'true');
+
+    await checkAuthAndRedirectIfTens();
+
+    expect(localStorageMock.removeItem).toHaveBeenCalledWith('tensCheckCarriedOut');
+    expect(mockReplace).not.toHaveBeenCalled();
   });
 
-  test('defaults to English when no locale is in sessionStorage', () => {
-    sessionStorage.removeItem('rsdk_locale');
-    render(<ShutterServicePage />);
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('SHUTTER_SERVICE_UNAVAILABLE');
+  it('should redirect to TENS page if conditions are met', async () => {
+    const mockResponse = {
+      IsNormalAuthentication: false,
+      PostAuthAction: 'TENS',
+    };
+    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
+
+    await checkAuthAndRedirectIfTens();
+
+    expect(localStorageMock.setItem).toHaveBeenCalledWith('tensCheckCarriedOut', 'true');
+    expect(mockReplace).toHaveBeenCalledWith(
+      'https://www.tax.service.gov.uk/protect-tax-info?redirectUrl=http%3A%2F%2Fexample.com%2Fcurrent'
+    );
+  });
+
+  it('should not redirect if conditions are not met', async () => {
+    const mockResponse = {
+      IsNormalAuthentication: true,
+      PostAuthAction: 'NONE',
+    };
+    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
+
+    await checkAuthAndRedirectIfTens();
+
+    expect(localStorageMock.setItem).not.toHaveBeenCalled();
+    expect(mockReplace).not.toHaveBeenCalled();
+  });
+
+  it('should handle API error and navigate to /apierrorpage', async () => {
+    mockGetPageDataAsync.mockRejectedValueOnce(new Error('API Error'));
+
+    await checkAuthAndRedirectIfTens();
+
+    expect(mockReplace).toHaveBeenCalledWith('/apierrorpage');
   });
 });
