@@ -1,180 +1,118 @@
-// utils/getPageDataUtil.ts
-export interface DataPageResponse {
-  IsNormalAuthentication?: boolean;
-  PostAuthAction?: string;
-}
-
-export async function getPageDataAsync<T extends DataPageResponse>(
-  pageName: string,
-  context: string = 'root'
-): Promise<T | null> {
-  try {
-    const dataPage: Promise<T> = PCore.getDataPageUtils().getPageDataAsync(pageName, context) as Promise<T>;
-    return await dataPage;
-  } catch (error) {
-    console.error(`Error fetching data page ${pageName} with context ${context}:`, error);
-    
-    // Navigate to the API error page on failure
-    const apiErrorPageUrl = '/apierrorpage'; // Define your error page path here
-    window.location.replace(apiErrorPageUrl);
-
-    return null; // This line is for type compatibility, though navigation interrupts execution
-  }
-}
-
-// checkAuthAndRedirectIfTens.ts
-import { getPageDataAsync, DataPageResponse } from './utils/getPageDataUtil';
-
-async function checkAuthAndRedirectIfTens(): Promise<void> {
-  if (localStorage.getItem('tensCheckCarriedOut') === 'true') {
-    // After the redirect from TENS
-    localStorage.removeItem('tensCheckCarriedOut');
-    return;
-  }
-
-  const dataResponse = await getPageDataAsync<DataPageResponse>('D_PostCitizenAuthAction');
-  if (dataResponse?.IsNormalAuthentication === false && dataResponse?.PostAuthAction === 'TENS') {
-    localStorage.setItem('tensCheckCarriedOut', 'true');
-    const currentPage = window.location.href;
-    window.location.replace(
-      `https://www.tax.service.gov.uk/protect-tax-info?redirectUrl=${encodeURIComponent(currentPage)}`
-    ); // This will not work in Dev as this is only available in prod
-  }
-}
-
-export default checkAuthAndRedirectIfTens;
-
-
-import { getPageDataAsync } from './getPageDataUtil';
-
-const mockGetPageDataAsync = jest.fn();
-
-// Mock PCore global object
-(global as any).PCore = {
-  getDataPageUtils: () => ({
-    getPageDataAsync: mockGetPageDataAsync,
-  }),
-};
-
-// Mock window.location.replace
-const mockReplace = jest.fn();
-Object.defineProperty(window, 'location', {
-  writable: true,
-  value: { replace: mockReplace },
-});
-
-describe('getPageDataAsync', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should return data when API call is successful', async () => {
-    const mockResponse = { IsNormalAuthentication: true, PostAuthAction: 'NONE' };
-    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
-
-    const result = await getPageDataAsync('D_PostCitizenAuthAction', 'root');
-
-    expect(result).toEqual(mockResponse);
-    expect(mockGetPageDataAsync).toHaveBeenCalledWith('D_PostCitizenAuthAction', 'root');
-  });
-
-  it('should navigate to /apierrorpage when API call fails', async () => {
-    mockGetPageDataAsync.mockRejectedValueOnce(new Error('API Error'));
-
-    const result = await getPageDataAsync('D_PostCitizenAuthAction', 'root');
-
-    expect(result).toBeNull();
-    expect(mockReplace).toHaveBeenCalledWith('/apierrorpage');
-    expect(console.error).toHaveBeenCalledWith(
-      'Error fetching data page D_PostCitizenAuthAction with context root:',
-      expect.any(Error)
-    );
-  });
-});
-
 import checkAuthAndRedirectIfTens from './checkAuthAndRedirectIfTens';
-import * as utils from './utils/getPageDataUtil';
+import getPageDataAsync from './getPageDataAsync';
 
-jest.mock('./utils/getPageDataUtil', () => ({
-  getPageDataAsync: jest.fn(),
-}));
+jest.mock('./getPageDataAsync');
 
-const mockGetPageDataAsync = utils.getPageDataAsync as jest.Mock;
-
-// Mock localStorage
-const localStorageMock = (() => {
-  let store: Record<string, string> = {};
-
-  return {
-    getItem: jest.fn((key) => store[key] || null),
-    setItem: jest.fn((key, value) => {
-      store[key] = value;
-    }),
-    removeItem: jest.fn((key) => {
-      delete store[key];
-    }),
-    clear: jest.fn(() => {
-      store = {};
-    }),
-  };
-})();
-Object.defineProperty(window, 'localStorage', { value: localStorageMock });
-
-// Mock window.location.replace
-const mockReplace = jest.fn();
-Object.defineProperty(window, 'location', {
-  writable: true,
-  value: { replace: mockReplace, href: 'http://example.com/current' },
-});
+const TENS_REDIRECT_URL = 'https://www.tax.service.gov.uk/protect-tax-info';
 
 describe('checkAuthAndRedirectIfTens', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-    localStorageMock.clear();
+  afterEach(() => {
+    jest.resetAllMocks();
+    localStorage.clear();
+    delete (window as any).location;
+    (window as any).location = { href: '', replace: jest.fn() };
   });
 
-  it('should remove tensCheckCarriedOut from localStorage if already carried out', async () => {
-    localStorageMock.setItem('tensCheckCarriedOut', 'true');
+  it('should not do anything if tensCheckCarriedOut is true in localStorage', async () => {
+    localStorage.setItem('tensCheckCarriedOut', 'true');
 
     await checkAuthAndRedirectIfTens();
 
-    expect(localStorageMock.removeItem).toHaveBeenCalledWith('tensCheckCarriedOut');
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(localStorage.getItem('tensCheckCarriedOut')).toBe(null); // Should remove the key
+    expect(getPageDataAsync).not.toHaveBeenCalled();
+    expect(window.location.replace).not.toHaveBeenCalled();
   });
 
-  it('should redirect to TENS page if conditions are met', async () => {
-    const mockResponse = {
+  it('should redirect to TENS URL if PostAuthAction is "TENS" and IsNormalAuthentication is false', async () => {
+    const mockCurrentPage = 'https://example.com/current';
+    window.location.href = mockCurrentPage;
+
+    (getPageDataAsync as jest.Mock).mockResolvedValue({
       IsNormalAuthentication: false,
-      PostAuthAction: 'TENS',
-    };
-    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
+      PostAuthAction: 'TENS'
+    });
 
     await checkAuthAndRedirectIfTens();
 
-    expect(localStorageMock.setItem).toHaveBeenCalledWith('tensCheckCarriedOut', 'true');
-    expect(mockReplace).toHaveBeenCalledWith(
-      'https://www.tax.service.gov.uk/protect-tax-info?redirectUrl=http%3A%2F%2Fexample.com%2Fcurrent'
+    expect(localStorage.getItem('tensCheckCarriedOut')).toBe('true');
+    expect(window.location.replace).toHaveBeenCalledWith(
+      `${TENS_REDIRECT_URL}?redirectUrl=${encodeURIComponent(mockCurrentPage)}`
     );
   });
 
-  it('should not redirect if conditions are not met', async () => {
-    const mockResponse = {
-      IsNormalAuthentication: true,
-      PostAuthAction: 'NONE',
-    };
-    mockGetPageDataAsync.mockResolvedValueOnce(mockResponse);
+  it('should not redirect if PostAuthAction is not "TENS"', async () => {
+    (getPageDataAsync as jest.Mock).mockResolvedValue({
+      IsNormalAuthentication: false,
+      PostAuthAction: 'OTHER_ACTION'
+    });
 
     await checkAuthAndRedirectIfTens();
 
-    expect(localStorageMock.setItem).not.toHaveBeenCalled();
-    expect(mockReplace).not.toHaveBeenCalled();
+    expect(localStorage.getItem('tensCheckCarriedOut')).toBe(null);
+    expect(window.location.replace).not.toHaveBeenCalled();
   });
 
-  it('should handle API error and navigate to /apierrorpage', async () => {
-    mockGetPageDataAsync.mockRejectedValueOnce(new Error('API Error'));
+  it('should not redirect if IsNormalAuthentication is true', async () => {
+    (getPageDataAsync as jest.Mock).mockResolvedValue({
+      IsNormalAuthentication: true,
+      PostAuthAction: 'TENS'
+    });
 
     await checkAuthAndRedirectIfTens();
 
-    expect(mockReplace).toHaveBeenCalledWith('/apierrorpage');
+    expect(localStorage.getItem('tensCheckCarriedOut')).toBe(null);
+    expect(window.location.replace).not.toHaveBeenCalled();
+  });
+
+  it('should handle null response from getPageDataAsync gracefully', async () => {
+    (getPageDataAsync as jest.Mock).mockResolvedValue(null);
+
+    await checkAuthAndRedirectIfTens();
+
+    expect(localStorage.getItem('tensCheckCarriedOut')).toBe(null);
+    expect(window.location.replace).not.toHaveBeenCalled();
+  });
+});
+
+import getPageDataAsync from './getPageDataAsync';
+
+describe('getPageDataAsync', () => {
+  const mockGetPageDataAsync = jest.fn();
+  const PCoreMock = {
+    getDataPageUtils: () => ({
+      getPageDataAsync: mockGetPageDataAsync
+    })
+  };
+
+  beforeEach(() => {
+    (global as any).PCore = PCoreMock;
+  });
+
+  afterEach(() => {
+    jest.resetAllMocks();
+    delete (global as any).PCore;
+  });
+
+  it('should call PCore.getDataPageUtils().getPageDataAsync with correct parameters', async () => {
+    mockGetPageDataAsync.mockResolvedValue({ someKey: 'someValue' });
+
+    const result = await getPageDataAsync({
+      pageName: 'testPage',
+      context: 'testContext',
+      props: { key: 'value' }
+    });
+
+    expect(mockGetPageDataAsync).toHaveBeenCalledWith('testPage', 'testContext', { key: 'value' });
+    expect(result).toEqual({ someKey: 'someValue' });
+  });
+
+  it('should return null if an error occurs', async () => {
+    mockGetPageDataAsync.mockRejectedValue(new Error('Test Error'));
+
+    const result = await getPageDataAsync({
+      pageName: 'testPage'
+    });
+
+    expect(result).toBeNull();
   });
 });
