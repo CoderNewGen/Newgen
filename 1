@@ -1,116 +1,48 @@
-import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { useTranslation } from 'react-i18next';
-import AccessibilityAppealsAndPenalties from './AccessibilityAppealsAndPenalties';
+import React, { FC, useRef, useEffect, MouseEvent, useCallback, useMemo, ElementRef } from 'react';
+import { ErrorSummaryProps } from './ErrorSummary.types';
 
-// Mock the useTranslation hook
-jest.mock('react-i18next', () => ({
-  useTranslation: jest.fn(),
-}));
+const ErrorSummary: FC<ErrorSummaryProps> = ({
+  heading = 'There is a problem',
+  errorDetails = [],
+  autoMoveFocus = true,
+}) => {
+  const errorSummaryRef = useRef<ElementRef<'div'>>(null);
 
-// Mock the custom HMRCExternalLinks hook
-jest.mock('../../../components/helpers/hooks/HMRCExternalLinks', () => ({
-  __esModule: true,
-  default: jest.fn(() => ({
-    referrerURL: 'mockReferrer',
-    hmrcURL: 'https://mock.hmrc.gov.uk/',
-  })),
-}));
+  useEffect(() => {
+    if (errorDetails.length > 0 && errorSummaryRef.current && autoMoveFocus) {
+      errorSummaryRef.current.focus();
+    }
+  }, [errorDetails, autoMoveFocus]);
 
-describe('AccessibilityAppealsAndPenalties', () => {
-  // Mock translations
-  beforeEach(() => {
-    useTranslation.mockReturnValue({
-      t: (key) => key, // Simply return the key for testing
-    });
-  });
+  const handleClick = useCallback((e: MouseEvent<HTMLAnchorElement>) => {
+    e.preventDefault();
+    const targetId = e.currentTarget.href.split('#').pop();
+    const target = targetId ? document.getElementById(targetId) : null;
 
-  // Test: Component renders without crashing
-  test('renders without crashing', () => {
-    const { container } = render(<AccessibilityAppealsAndPenalties />);
-    expect(container).toBeInTheDocument();
-  });
+    if (target) {
+      target.focus();
+    }
+  }, []);
 
-  // Snapshot test: Ensure component's output remains consistent
-  test('matches the snapshot', () => {
-    const { asFragment } = render(<AccessibilityAppealsAndPenalties />);
-    expect(asFragment()).toMatchSnapshot();
-  });
+  const errorList = useMemo(
+    () =>
+      errorDetails.map(({ targetFieldId, message }) => (
+        <li key={targetFieldId}>
+          <a href={`#${targetFieldId}`} onClick={handleClick}>
+            {message}
+          </a>
+        </li>
+      )),
+    [errorDetails, handleClick]
+  );
 
-  // Test: Main heading is rendered
-  test('renders the main heading', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-    expect(screen.getByText('ACCESSIBLITY_STATEMENT_FOR_APPEAL_SERVICE')).toBeInTheDocument();
-  });
-
-  // Test: All section headings are rendered
-  test('renders all section headings', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-    const headings = [
-      'HOW_ACCESSIBLE_THIS_SERVICE_IS',
-      'WHAT_TO_DO_IF_YOU_HAVE_DIFFICULTY_USING_THIS',
-      'REPORTING_ACCESSIBILITY_PROBLEMS_WITH_THIS_SERVICE',
-      'IF_YOU_ARE_NOT_HAPPY',
-      'CONTACTING_US_BY',
-      'TECHNICAL_INFO_ABOUT_THIS_SERVICE',
-      'HOW_WE_TESTED_THIS',
-    ];
-    headings.forEach((heading) => {
-      expect(screen.getByText(heading)).toBeInTheDocument();
-    });
-  });
-
-  // Test: Links are rendered with correct attributes
-  test('renders all links with correct href and attributes', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-
-    const links = [
-      { text: 'SEPARATE_AS_FOR_MAIN_GOVUK_WEBSITE', href: 'https://www.gov.uk/help/accessibility-statement' },
-      { text: 'ABILITYNET_HAS_ADVICE', href: 'https://mcmw.abilitynet.org.uk/' },
-      { text: 'CONTACT_HMRC_FOR_EXTRA_SUPPORT', href: 'https://www.gov.uk/get-help-hmrc-extra-support' },
-      { text: 'REPORT_THE_ACCESSIBILITY_PROBLEM', href: 'https://mock.hmrc.gov.uk/contact/accessibility?service=463&referrerUrl=mockReferrer' },
-      { text: 'CONTACT_THE_EASS', href: 'https://www.equalityadvisoryservice.com/' },
-      { text: 'ECNI', href: 'https://www.equalityni.org/Home' },
-      { text: 'HOW_TO_GET_EXTRA_SUPPORT', href: 'https://www.gov.uk/get-help-hmrc-extra-support' },
-      { text: 'WEB_CONTENT_ACCESSIBILITY_VERSION', href: 'https://www.w3.org/TR/WCAG22/' },
-    ];
-
-    links.forEach(({ text, href }) => {
-      const linkElement = screen.getByText(text);
-      expect(linkElement).toBeInTheDocument();
-      expect(linkElement.closest('a')).toHaveAttribute('href', href);
-      expect(linkElement.closest('a')).toHaveAttribute('target', '_blank');
-      expect(linkElement.closest('a')).toHaveAttribute('rel', 'noreferrer noopener');
-    });
-  });
-
-  // Test: Dynamic lists are rendered with correct items
-  test('renders dynamic lists with correct items', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-    const listItems = screen.getAllByRole('listitem');
-    expect(listItems.length).toBe(5); // Assuming list 1 has 5 items
-    listItems.forEach((item, index) => {
-      expect(item.textContent).toBe(`ACCESSIBILITY_LIST_1_${index}`);
-    });
-  });
-
-  // Test: Custom HMRCExternalLinks hook is used correctly
-  test('uses HMRCExternalLinks hook for URLs', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-    const reportLink = screen.getByText('REPORT_THE_ACCESSIBILITY_PROBLEM');
-    expect(reportLink.closest('a')).toHaveAttribute(
-      'href',
-      'https://mock.hmrc.gov.uk/contact/accessibility?service=463&referrerUrl=mockReferrer'
-    );
-  });
-
-  // Test: All links have accessibility attributes
-  test('ensures all links have target="_blank" and rel="noreferrer noopener"', () => {
-    render(<AccessibilityAppealsAndPenalties />);
-    const links = screen.getAllByRole('link');
-    links.forEach((link) => {
-      expect(link).toHaveAttribute('target', '_blank');
-      expect(link).toHaveAttribute('rel', 'noreferrer noopener');
-    });
-  });
-});
+  return (
+    <div
+      ref={errorSummaryRef}
+      className="govuk-error-summary"
+      tabIndex={-1}
+      data-module="govuk-error-summary"
+    >
+      <div role="alert">
+        <h2 className="govuk-error-summary__title">{heading}</h2>
+        <div className="govuk-error-summary__body
