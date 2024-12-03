@@ -1,58 +1,18 @@
-import React, { FC, useRef, useEffect, MouseEvent, useCallback, useMemo, ElementRef } from 'react';
-import { ErrorSummaryProps } from './ErrorSummary.types';
+defaultOnlyFieldDetails.overrideLabel = DFContext.OverrideLabelValue;
 
-const ErrorSummary: FC<ErrorSummaryProps> = ({
-  heading = 'There is a problem',
-  errorDetails = [],
-  autoMoveFocus = true,
-}) => {
-  const errorSummaryRef = useRef<ElementRef<'div'>>(null);
+// Retrieve required values upfront
+const pageHasNonEditableField = PCore.getStoreValue('pageHasNonEdtiableField', '', 'app');
+const context = PCore.getContainerUtils().getActiveContainerItemName(
+  `${PCore.getConstants().APP.APP}/primary`
+);
+const workareaContext = PCore.getContainerUtils().getActiveContainerItemContext(`${context}/workarea`);
 
-  useEffect(() => {
-    if (errorDetails.length > 0 && errorSummaryRef.current && autoMoveFocus) {
-      errorSummaryRef.current.focus();
-    }
-  }, [errorDetails, autoMoveFocus]);
+// Get editable fields and adjust the count inline
+const editableFields = PCore.getFormUtils().getEditableFields(workareaContext);
+const editableFieldsCount = 
+  editableFields.length === 1 && editableFields[0].label === 'GoBack' 
+    ? 0 
+    : editableFields.length;
 
-  const handleClick = useCallback((e: MouseEvent<HTMLAnchorElement>) => {
-    e.preventDefault();
-    const targetId = e.currentTarget.href.split('#').pop();
-    const target = targetId ? document.getElementById(targetId) : null;
-
-    if (target) {
-      target.focus();
-    }
-  }, []);
-
-  const errorList = useMemo(
-    () =>
-      errorDetails.map(({ targetFieldId, message }) => (
-        <li key={targetFieldId}>
-          <a href={`#${targetFieldId}`} onClick={handleClick}>
-            {message}
-          </a>
-        </li>
-      )),
-    [errorDetails, handleClick]
-  );
-
-  return (
-    <div
-      ref={errorSummaryRef}
-      className="govuk-error-summary"
-      tabIndex={-1}
-      data-module="govuk-error-summary"
-    >
-      <div role="alert">
-        <h2 className="govuk-error-summary__title">{heading}</h2>
-        <div className="govuk-error-summary__body">
-          {errorDetails.length > 0 && (
-            <ul className="govuk-list govuk-error-summary__list">{errorList}</ul>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export { ErrorSummary };
+// Set the flag if the conditions are met
+defaultOnlyFieldDetails.isOnlyField = editableFieldsCount === 1 && !pageHasNonEditableField;
