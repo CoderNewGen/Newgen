@@ -1,18 +1,118 @@
-defaultOnlyFieldDetails.overrideLabel = DFContext.OverrideLabelValue;
-
-// Retrieve required values upfront
-const pageHasNonEditableField = PCore.getStoreValue('pageHasNonEdtiableField', '', 'app');
-const context = PCore.getContainerUtils().getActiveContainerItemName(
-  `${PCore.getConstants().APP.APP}/primary`
-);
-const workareaContext = PCore.getContainerUtils().getActiveContainerItemContext(`${context}/workarea`);
-
-// Get editable fields and adjust the count inline
-const editableFields = PCore.getFormUtils().getEditableFields(workareaContext);
-const editableFieldsCount = 
-  editableFields.length === 1 && editableFields[0].label === 'GoBack' 
-    ? 0 
-    : editableFields.length;
-
-// Set the flag if the conditions are met
-defaultOnlyFieldDetails.isOnlyField = editableFieldsCount === 1 && !pageHasNonEditableField;
+{
+  "penaltyData": [
+    {
+      "year": "2023-2024",
+      "penalties": [
+        {
+          "type": "Late Filing Penalties",
+          "rows": [
+            {
+              "penaltyNumber": 1,
+              "additionalInfo": "Filed 1 month late",
+              "amount": 100
+            },
+            {
+              "penaltyNumber": 2,
+              "additionalInfo": "Filed 2 months late",
+              "amount": 200
+            },
+            {
+              "penaltyNumber": 3,
+              "additionalInfo": "Filed 3 months late",
+              "amount": 300
+            },
+            {
+              "penaltyNumber": 4,
+              "additionalInfo": "Filed 4 months late",
+              "amount": 400
+            }
+          ],
+          "totalAmount": 1000
+        },
+        {
+          "type": "Late Payment Penalties",
+          "rows": [
+            {
+              "penaltyNumber": 1,
+              "additionalInfo": "Payment 1 month late",
+              "amount": 150
+            },
+            {
+              "penaltyNumber": 2,
+              "additionalInfo": "Payment 2 months late",
+              "amount": 250
+            },
+            {
+              "penaltyNumber": 3,
+              "additionalInfo": "Payment 3 months late",
+              "amount": 350
+            },
+            {
+              "penaltyNumber": 4,
+              "additionalInfo": "Payment 4 months late",
+              "amount": 450
+            }
+          ],
+          "totalAmount": 1200
+        }
+      ]
+    },
+    {
+      "year": "2022-2023",
+      "penalties": [
+        {
+          "type": "Late Filing Penalties",
+          "rows": [
+            {
+              "penaltyNumber": 1,
+              "additionalInfo": "Filed 1 month late",
+              "amount": 90
+            },
+            {
+              "penaltyNumber": 2,
+              "additionalInfo": "Filed 2 months late",
+              "amount": 180
+            },
+            {
+              "penaltyNumber": 3,
+              "additionalInfo": "Filed 3 months late",
+              "amount": 270
+            },
+            {
+              "penaltyNumber": 4,
+              "additionalInfo": "Filed 4 months late",
+              "amount": 360
+            }
+          ],
+          "totalAmount": 900
+        },
+        {
+          "type": "Late Payment Penalties",
+          "rows": [
+            {
+              "penaltyNumber": 1,
+              "additionalInfo": "Payment 1 month late",
+              "amount": 140
+            },
+            {
+              "penaltyNumber": 2,
+              "additionalInfo": "Payment 2 months late",
+              "amount": 240
+            },
+            {
+              "penaltyNumber": 3,
+              "additionalInfo": "Payment 3 months late",
+              "amount": 340
+            },
+            {
+              "penaltyNumber": 4,
+              "additionalInfo": "Payment 4 months late",
+              "amount": 440
+            }
+          ],
+          "totalAmount": 1160
+        }
+      ]
+    }
+  ]
+}
