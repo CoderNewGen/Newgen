@@ -1,3 +1,90 @@
+// PenaltyTypes.ts
+
+export interface PenaltyRowProps {
+  penaltyNumber: number;
+  additionalInfo: string;
+  amount: number;
+}
+
+export interface PenaltySection {
+  penaltyType: string;
+  results: PenaltyRowProps[];
+  totalAmount: number;
+}
+
+export interface PenaltyDuration {
+  duration: string;
+  penalties: PenaltySection[];
+}
+
+export interface PenaltyData {
+  penaltyData: PenaltyDuration[] | [];
+}
+
+export interface PenaltyDataProps {
+  data: PenaltyData;
+}
+
+
+import React from 'react';
+import { PenaltyDataProps, PenaltySection, PenaltyRowProps } from './PenaltyTypes';
+import { formatOrdinal } from '../../../components/helpers/utils';
+
+const DurationHeading: React.FC<{ duration: string }> = ({ duration }) => (
+  <h2 className='govuk-heading-m'>Penalties for the {duration} tax year</h2>
+);
+
+const PenaltyRow: React.FC<PenaltyRowProps> = ({ penaltyNumber, additionalInfo, amount }) => (
+  <div className='govuk-summary-list__row'>
+    <dt className='govuk-summary-list__key govuk-!-width-one-half'>
+      <strong>{formatOrdinal(penaltyNumber)} penalty</strong>
+      <p className='govuk-!-margin-bottom-0'>{additionalInfo}</p>
+    </dt>
+    <dd className='govuk-summary-list__value govuk-!-text-align-right govuk-!-width-one-quarter'>
+      £{amount}
+    </dd>
+  </div>
+);
+
+const PenaltyCard: React.FC<PenaltySection> = ({ penaltyType, results, totalAmount }) => {
+  const hasMultiplePenalties = results.length > 1;
+
+  return (
+    <div className='govuk-summary-card'>
+      <div className='govuk-summary-card__title-wrapper'>
+        <h2 className='govuk-summary-card__title govuk-!-width-one-half'>{penaltyType}</h2>
+        {hasMultiplePenalties && (
+          <span className='govuk-body govuk-!-text-align-right govuk-!-width-one-quarter'>
+            <strong>£{totalAmount}</strong>
+          </span>
+        )}
+      </div>
+      <div className='govuk-summary-card__content'>
+        <dl className='govuk-summary-list'>
+          {results.map(row => (
+            <PenaltyRow key={row.penaltyNumber} {...row} />
+          ))}
+        </dl>
+      </div>
+    </div>
+  );
+};
+
+const PenaltyDatails: React.FC<PenaltyDataProps> = ({ data }) => (
+  <div>
+    {data.penaltyData.map(({ duration, penalties }) => (
+      <div key={duration}>
+        <DurationHeading duration={duration} />
+        {penalties.map(penaltySection => (
+          <PenaltyCard key={penaltySection.penaltyType} {...penaltySection} />
+        ))}
+      </div>
+    ))}
+  </div>
+);
+
+export default PenaltyDatails;
+
 import React, { useEffect, useState } from 'react';
 import AskHMRC from '../../../components/AppComponents/AskHMRC';
 import Button from '../../../components/BaseComponents/Button/Button';
@@ -6,8 +93,9 @@ import useHMRCExternalLinks from '../../../components/helpers/hooks/HMRCExternal
 import PenaltyDatails from './PenaltyDatails';
 import setPageTitle from '../../../components/helpers/setPageTitleHelpers';
 import { getServiceShutteredStatus } from '../../../components/helpers/utils';
+import { PenaltyData } from './PenaltyTypes';
 
-interface AppealsAndPenaltiesLandingProps {
+interface LandingProps {
   showPortalBanner: boolean;
   isLogout: boolean;
   pConn: any;
@@ -18,7 +106,7 @@ interface AppealsAndPenaltiesLandingProps {
   setShutterServicePage: (status: boolean) => void;
 }
 
-export default function AppealsAndPenaltiesLanding(props: AppealsAndPenaltiesLandingProps) {
+const AppealsAndPenaltiesLanding: React.FC<LandingProps> = props => {
   const {
     showPortalBanner,
     isLogout,
@@ -27,17 +115,12 @@ export default function AppealsAndPenaltiesLanding(props: AppealsAndPenaltiesLan
     creatCaseEndpoint,
     handleCaseStart,
     caseListApiParams,
-    setShutterServicePage,
+    setShutterServicePage
   } = props;
 
-  const [dashboardData, setDashboardData] = useState([]);
+  const [dashboardData, setDashboardData] = useState<PenaltyData>({ penaltyData: [] });
   const { t } = useTranslation();
   const { hmrcURL } = useHMRCExternalLinks();
-
-  useEffect(() => {
-    setPageTitle();
-    checkShutterService();
-  }, [showPortalBanner]);
 
   const createCase = () => {
     PCore.getMashupApi().createCase(creatCaseEndpoint, PCore.getConstants().APP.APP);
@@ -70,125 +153,150 @@ export default function AppealsAndPenaltiesLanding(props: AppealsAndPenaltiesLan
     }
   };
 
+  useEffect(() => {
+    setPageTitle();
+    checkShutterService();
+  }, [showPortalBanner]);
+
+  const renderPenaltiesSection = () => (
+    <>
+      <div className='govuk-body'>
+        <p>{t('YOU_CAN_MAKE_AN_APPEAL')}</p>
+        <p>{t('YOU_WILL_BE_ASKED_ABOUT_YOUR_REASON')}</p>
+        <p>
+          <a
+            className='govuk-link'
+            rel='noreferrer noopener'
+            href='https://www.gov.uk/guidance/check-when-you-can-expect-a-reply-from-hmrc'
+            target='_blank'
+          >
+            {t('CHECK_REPLY_FROM_HMRC')} {t('OPENS_IN_NEW_TAB')}
+          </a>
+          .
+        </p>
+      </div>
+      <PenaltyDatails data={dashboardData} />
+      <div className='govuk-body govuk-!-static-margin-bottom-6'>
+        <h2 className='govuk-heading-m'>{t('MAKE_AN_APPEAL')}</h2>
+        <p>{t('IF_YOU_DONT_THINK')}</p>
+        <p>{t('YOU_WILL_BE_ASKED_ABOUT_REASON')}</p>
+        <p>{t('YOU_CAN_ALSO_TELL_US')}</p>
+        <h2 className='govuk-heading-m'>{t('IF_YOU_HAVE_MORE_THAN_ONE')}</h2>
+        <p>{t('THERE_ARE_2_TYPES')}</p>
+        <ul className='govuk-list govuk-list--bullet'>
+          <li>{t('LFP')}</li>
+          <li>{t('LPP')}</li>
+        </ul>
+        <p>{t('APPEAL_MULTIPLE_PENALTIES')}</p>
+        <p>{t('IF_YOU_HAVE_MORE_THAN_ONE_ACROSS_MULTIPLE_TAX_YEARS')}</p>
+      </div>
+    </>
+  );
+
   return (
     <main
       className={`govuk-main-wrapper ${isLogout ? 'visibility-hidden' : ''}`}
-      id="main-content"
-      role="main"
+      id='main-content'
+      role='main'
     >
-      <div className="govuk-grid-row">
-        <div className="govuk-grid-column-full govuk-prototype-kit-common-templates-mainstream-guide-body govuk-!-padding-right-0 govuk-!-padding-left-0">
-          <div className="govuk-grid-column-two-thirds">
-            <HeaderSection t={t} />
-            {dashboardData.length === 0 ? (
-              <NoPenaltiesMessage t={t} />
+      <div className='govuk-grid-row'>
+        <div className='govuk-grid-column-full govuk-prototype-kit-common-templates-mainstream-guide-body govuk-!-padding-right-0 govuk-!-padding-left-0'>
+          <div className='govuk-grid-column-two-thirds'>
+            <h1 className='govuk-heading-l'>{t('YOUR_SELF_ASSESMENT_PENALTIES')}</h1>
+            {dashboardData.penaltyData.length === 0 ? (
+              <p>{t('YOU_DO_NOT_HAVE_SA_PENALTIES')}</p>
             ) : (
-              <>
-                <DashboardContent
-                  t={t}
-                  dashboardData={dashboardData}
-                  createCase={createCase}
-                  hmrcURL={hmrcURL}
-                />
-              </>
+              renderPenaltiesSection()
             )}
+            <Button
+              id='continueToPortal'
+              onClick={createCase}
+              data-prevent-double-click='true'
+              attributes={{ className: 'govuk-!-static-margin-bottom-1' }}
+            >
+              {t('START_NOW')}
+            </Button>
+            <AskHMRC />
+            <p className='govuk-body'>
+              <a
+                className='govuk-link'
+                rel='noreferrer noopener'
+                target='_blank'
+                href={`${hmrcURL}contact/report-technical-problem?service=427&referrerUrl=${window.location}`}
+              >
+                {t('PAGE_NOT_WORKING_PROPERLY')} {t('OPENS_IN_NEW_TAB')}
+              </a>
+            </p>
           </div>
         </div>
       </div>
     </main>
   );
-}
+};
 
+export default AppealsAndPenaltiesLanding;
 
+import React from 'react';
+import { PenaltyDataProps, PenaltySection, PenaltyRowProps } from './PenaltyTypes';
+import { formatOrdinal } from '../../../components/helpers/utils';
 
-
-const HeaderSection: React.FC<{ t: any }> = ({ t }) => (
-  <h1 className="govuk-heading-l">{t('YOUR_SELF_ASSESMENT_PENALTIES')}</h1>
+const DurationHeading: React.FC<{ duration: string }> = ({ duration }) => (
+  <h2 className='govuk-heading-m'>Penalties for the {duration} tax year</h2>
 );
-const NoPenaltiesMessage: React.FC<{ t: any }> = ({ t }) => (
-  <p>{t('YOU_DO_NOT_HAVE_SA_PENALTIES')}</p>
+
+const PenaltyRow: React.FC<PenaltyRowProps> = ({ penaltyNumber, additionalInfo, amount }) => (
+  <div className='govuk-summary-list__row'>
+    <dt className='govuk-summary-list__key govuk-!-width-one-half'>
+      <strong>{formatOrdinal(penaltyNumber)} penalty</strong>
+      <p className='govuk-!-margin-bottom-0'>{additionalInfo}</p>
+    </dt>
+    <dd className='govuk-summary-list__value govuk-!-text-align-right govuk-!-width-one-quarter'>
+      £{amount.toFixed(2)}
+    </dd>
+  </div>
 );
 
+const PenaltyCard: React.FC<PenaltySection> = ({ penaltyType, results, totalAmount }) => {
+  const hasMultiplePenalties = results.length > 1;
 
-interface DashboardContentProps {
-  t: any;
-  dashboardData: any[];
-  createCase: () => void;
-  hmrcURL: string;
-}
-
-const DashboardContent: React.FC<DashboardContentProps> = ({
-  t,
-  dashboardData,
-  createCase,
-  hmrcURL,
-}) => (
-  <>
-    <div className="govuk-body">
-      <p>{t('YOU_CAN_MAKE_AN_APPEAL')}</p>
-      <p>{t('YOU_WILL_BE_ASKED_ABOUT_YOUR_REASON')}</p>
-      <p>
-        <a
-          className="govuk-link"
-          rel="noreferrer noopener"
-          href="https://www.gov.uk/guidance/check-when-you-can-expect-a-reply-from-hmrc"
-          target="_blank"
-        >
-          {t('CHECK_REPLY_FROM_HMRC')} {t('OPENS_IN_NEW_TAB')}
-        </a>
-        .
-      </p>
+  return (
+    <div className='govuk-summary-card'>
+      <div className='govuk-summary-card__title-wrapper'>
+        <h2 className='govuk-summary-card__title govuk-!-width-one-half'>{penaltyType}</h2>
+        {hasMultiplePenalties && (
+          <span className='govuk-body govuk-!-text-align-right govuk-!-width-one-quarter'>
+            <strong>£{totalAmount.toFixed(2)}</strong>
+          </span>
+        )}
+      </div>
+      <div className='govuk-summary-card__content'>
+        <dl className='govuk-summary-list'>
+          {results.map(row => (
+            <PenaltyRow key={row.penaltyNumber} {...row} />
+          ))}
+        </dl>
+      </div>
     </div>
-    <PenaltyDatails data={dashboardData} />
-    <AdditionalInfo t={t} createCase={createCase} hmrcURL={hmrcURL} />
-  </>
-)
+  );
+};
 
+const PenaltyDatails: React.FC<PenaltyDataProps> = ({ data }) => {
+  if (!data.penaltyData || data.penaltyData.length === 0) {
+    return <p>No penalties available for display.</p>;
+  }
 
-interface AdditionalInfoProps {
-  t: any;
-  createCase: () => void;
-  hmrcURL: string;
-}
-
-const AdditionalInfo: React.FC<AdditionalInfoProps> = ({ t, createCase, hmrcURL }) => (
-  <>
-    <div className="govuk-body govuk-!-static-margin-bottom-6">
-      <h2 className="govuk-heading-m">{t('MAKE_AN_APPEAL')}</h2>
-      <p>{t('IF_YOU_DONT_THINK')}</p>
-      <p>{t('YOU_WILL_BE_ASKED_ABOUT_REASON')}</p>
-      <p>{t('YOU_CAN_ALSO_TELL_US')}</p>
-      <h2 className="govuk-heading-m">{t('IF_YOU_HAVE_MORE_THAN_ONE')}</h2>
-      <p>{t('THERE_ARE_2_TYPES')}</p>
-      <ul className="govuk-list govuk-list--bullet">
-        <li>{t('LFP')}</li>
-        <li>{t('LPP')}</li>
-      </ul>
-      <p>{t('APPEAL_MULTIPLE_PENALTIES')}</p>
-      <p>{t('IF_YOU_HAVE_MORE_THAN_ONE_ACROSS_MULTIPLE_TAX_YEARS')}</p>
+  return (
+    <div>
+      {data.penaltyData.map(({ duration, penalties }) => (
+        <div key={duration}>
+          <DurationHeading duration={duration} />
+          {penalties.map(penaltySection => (
+            <PenaltyCard key={penaltySection.penaltyType} {...penaltySection} />
+          ))}
+        </div>
+      ))}
     </div>
-    <Button
-      id="continueToPortal"
-      onClick={createCase}
-      data-prevent-double-click="true"
-      attributes={{ className: 'govuk-!-static-margin-bottom-1' }}
-    >
-      {t('START_NOW')}
-    </Button>
-    <AskHMRC />
-    <p className="govuk-body">
-      <a
-        className="govuk-link"
-        rel="noreferrer noopener"
-        target="_blank"
-        href={`${hmrcURL}contact/report-technical-problem?service=427&referrerUrl=${window.location}`}
-      >
-        {t('PAGE_NOT_WORKING_PROPERLY')} {t('OPENS_IN_NEW_TAB')}
-      </a>
-    </p>
-  </>
-);
+  );
+};
 
-
-
-
+export default PenaltyDatails;
