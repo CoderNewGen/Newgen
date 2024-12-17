@@ -1,240 +1,194 @@
-High-Level Design (HLD) Document for PenaltyDetails React Component
-
-
----
-
-1. Introduction
-
-The PenaltyDetails React component is a reusable, modular component designed to display a detailed breakdown of penalties for various tax years. It is composed of several sub-components, each responsible for rendering specific segments of data. The structure ensures clarity, reusability, and scalability while adhering to React and TypeScript best practices.
-
-
----
-
-2. Objectives
-
-Render hierarchical penalty data categorized by tax year, penalty type, and penalty details.
-
-Utilize sub-components to ensure modularity and separation of concerns.
-
-Provide a user-friendly interface that complies with GOV.UK design standards.
-
-
-
----
-
-3. Architectural Overview
-
-The component consists of the following key layers:
-
-1. Data Input: Hierarchical penalty data passed as props.
-
-
-2. Rendering Logic:
-
-DurationHeading: Displays the tax year header.
-
-PenaltyCard: Displays grouped penalty data for a specific penalty type.
-
-PenaltyRow: Displays individual penalty details.
-
-
-
-3. Helper Functions: Utility functions like formatOrdinal are used to enhance data presentation.
-
-
-
-The following subsections detail the component's architecture.
-
-
----
-
-4. Components Design
-
-4.1. PenaltyDetails
-
-Description: The parent component responsible for rendering the penalty data for all tax years.
-
-Props:
-
-data: PenaltyData
-
-penaltyData: Array of tax-year penalty data.
-
-
-
-Responsibilities:
-
-Iterate through penaltyData and render tax-year-specific penalties using sub-components.
-
-
-
-
----
-
-4.2. DurationHeading
-
-Description: Displays a heading for each tax year.
-
-Props:
-
-duration: string (e.g., "2023/24").
-
-
-Responsibilities:
-
-Render the header text with proper GOV.UK styling.
-
-
-
-
----
-
-4.3. PenaltyCard
-
-Description: Displays penalties grouped by penalty type within a tax year.
-
-Props:
-
-penaltyType: string (e.g., "Late Submission").
-
-results: Array<PenaltyRowProps>: Individual penalty details.
-
-totalAmount: number: Total penalty amount for the type.
-
-
-Responsibilities:
-
-Render penalty details as a list of PenaltyRow components.
-
-Display total amount if multiple penalties exist for the penalty type.
-
-
-
-
----
-
-4.4. PenaltyRow
-
-Description: Displays individual penalty details.
-
-Props:
-
-penaltyNumber: number (e.g., 1, 2).
-
-additionalInfo: string (e.g., "Missed submission deadline").
-
-amount: number (e.g., 100.0).
-
-
-Responsibilities:
-
-Format and display penalty number and additional details.
-
-Render the penalty amount in GBP (£).
-
-
-
-
----
-
-5. Helper Functions
-
-5.1. formatOrdinal
-
-Purpose: Converts a number to its ordinal representation (e.g., 1 → 1st, 2 → 2nd).
-
-Logic:
-
-Determines the suffix based on the number's value and rules.
-
-Handles edge cases for numbers ending in 11-13.
-
-
-
-
----
-
-6. Data Model
-
-The data model is defined using TypeScript interfaces for strong type-checking.
-
-interface PenaltyRowProps {
-  penaltyNumber: number;
-  additionalInfo: string;
-  amount: number;
+import React, { useEffect, useState } from 'react';
+import AskHMRC from '../../../components/AppComponents/AskHMRC';
+import Button from '../../../components/BaseComponents/Button/Button';
+import { useTranslation } from 'react-i18next';
+import useHMRCExternalLinks from '../../../components/helpers/hooks/HMRCExternalLinks';
+import PenaltyDatails from './PenaltyDatails';
+import setPageTitle from '../../../components/helpers/setPageTitleHelpers';
+import { getServiceShutteredStatus } from '../../../components/helpers/utils';
+
+interface AppealsAndPenaltiesLandingProps {
+  showPortalBanner: boolean;
+  isLogout: boolean;
+  pConn: any;
+  penaltyDataEndpoint: string;
+  creatCaseEndpoint: string;
+  handleCaseStart: () => void;
+  caseListApiParams: Record<string, any>;
+  setShutterServicePage: (status: boolean) => void;
 }
 
-interface PenaltySection {
-  penaltyType: string;
-  results: Array<PenaltyRowProps>;
-  totalAmount: number;
-}
+export default function AppealsAndPenaltiesLanding(props: AppealsAndPenaltiesLandingProps) {
+  const {
+    showPortalBanner,
+    isLogout,
+    pConn,
+    penaltyDataEndpoint,
+    creatCaseEndpoint,
+    handleCaseStart,
+    caseListApiParams,
+    setShutterServicePage,
+  } = props;
 
-interface PenaltyDuration {
-  duration: string;
-  penalties: Array<PenaltySection>;
-}
+  const [dashboardData, setDashboardData] = useState([]);
+  const { t } = useTranslation();
+  const { hmrcURL } = useHMRCExternalLinks();
 
-interface PenaltyData {
-  penaltyData: Array<PenaltyDuration>;
+  useEffect(() => {
+    setPageTitle();
+    checkShutterService();
+  }, [showPortalBanner]);
+
+  const createCase = () => {
+    PCore.getMashupApi().createCase(creatCaseEndpoint, PCore.getConstants().APP.APP);
+    handleCaseStart();
+  };
+
+  const fetchInProgressCaseDetailData = async () => {
+    const context = pConn.getContextName();
+    try {
+      const resp = await PCore.getDataPageUtils().getDataAsync(
+        penaltyDataEndpoint,
+        context,
+        { ...caseListApiParams }
+      );
+      setDashboardData(resp.data);
+    } catch (error) {
+      console.error('Error fetching in-progress case detail:', error);
+    }
+    sessionStorage.setItem('assignmentFinishedFlag', 'false');
+  };
+
+  const checkShutterService = async () => {
+    try {
+      const status = await getServiceShutteredStatus();
+      if (!status) fetchInProgressCaseDetailData();
+      setShutterServicePage(status);
+    } catch (error) {
+      setShutterServicePage(false);
+      console.error('Error setting shutter status:', error);
+    }
+  };
+
+  return (
+    <main
+      className={`govuk-main-wrapper ${isLogout ? 'visibility-hidden' : ''}`}
+      id="main-content"
+      role="main"
+    >
+      <div className="govuk-grid-row">
+        <div className="govuk-grid-column-full govuk-prototype-kit-common-templates-mainstream-guide-body govuk-!-padding-right-0 govuk-!-padding-left-0">
+          <div className="govuk-grid-column-two-thirds">
+            <HeaderSection t={t} />
+            {dashboardData.length === 0 ? (
+              <NoPenaltiesMessage t={t} />
+            ) : (
+              <>
+                <DashboardContent
+                  t={t}
+                  dashboardData={dashboardData}
+                  createCase={createCase}
+                  hmrcURL={hmrcURL}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      </div>
+    </main>
+  );
 }
 
 
----
-
-7. Styling
-
-The components utilize the following GOV.UK styles:
-
-Headers: govuk-heading-m for tax year headings.
-
-Cards: govuk-summary-card for penalty type grouping.
-
-Rows: govuk-summary-list for penalty details.
 
 
-These styles ensure visual consistency with GOV.UK design standards.
+const HeaderSection: React.FC<{ t: any }> = ({ t }) => (
+  <h1 className="govuk-heading-l">{t('YOUR_SELF_ASSESMENT_PENALTIES')}</h1>
+);
+const NoPenaltiesMessage: React.FC<{ t: any }> = ({ t }) => (
+  <p>{t('YOU_DO_NOT_HAVE_SA_PENALTIES')}</p>
+);
 
 
----
+interface DashboardContentProps {
+  t: any;
+  dashboardData: any[];
+  createCase: () => void;
+  hmrcURL: string;
+}
 
-8. Key Features
-
-Scalable: Supports any number of tax years, penalty types, and penalties.
-
-Reusable Sub-Components: Encapsulated logic for tax year headings, penalty cards, and rows.
-
-TypeScript Integration: Ensures type safety and better developer experience.
-
-Custom Utility: formatOrdinal enhances usability by formatting numbers.
-
-
-
----
-
-9. Limitations
-
-Assumes data validity; does not include data validation logic.
-
-Styling strictly follows GOV.UK standards, limiting design flexibility.
-
-
-
----
-
-10. Future Enhancements
-
-Add internationalization support for different currency symbols or text.
-
-Implement lazy loading for large datasets.
-
-Include a "no data" state if penalty data is empty.
+const DashboardContent: React.FC<DashboardContentProps> = ({
+  t,
+  dashboardData,
+  createCase,
+  hmrcURL,
+}) => (
+  <>
+    <div className="govuk-body">
+      <p>{t('YOU_CAN_MAKE_AN_APPEAL')}</p>
+      <p>{t('YOU_WILL_BE_ASKED_ABOUT_YOUR_REASON')}</p>
+      <p>
+        <a
+          className="govuk-link"
+          rel="noreferrer noopener"
+          href="https://www.gov.uk/guidance/check-when-you-can-expect-a-reply-from-hmrc"
+          target="_blank"
+        >
+          {t('CHECK_REPLY_FROM_HMRC')} {t('OPENS_IN_NEW_TAB')}
+        </a>
+        .
+      </p>
+    </div>
+    <PenaltyDatails data={dashboardData} />
+    <AdditionalInfo t={t} createCase={createCase} hmrcURL={hmrcURL} />
+  </>
+)
 
 
+interface AdditionalInfoProps {
+  t: any;
+  createCase: () => void;
+  hmrcURL: string;
+}
 
----
+const AdditionalInfo: React.FC<AdditionalInfoProps> = ({ t, createCase, hmrcURL }) => (
+  <>
+    <div className="govuk-body govuk-!-static-margin-bottom-6">
+      <h2 className="govuk-heading-m">{t('MAKE_AN_APPEAL')}</h2>
+      <p>{t('IF_YOU_DONT_THINK')}</p>
+      <p>{t('YOU_WILL_BE_ASKED_ABOUT_REASON')}</p>
+      <p>{t('YOU_CAN_ALSO_TELL_US')}</p>
+      <h2 className="govuk-heading-m">{t('IF_YOU_HAVE_MORE_THAN_ONE')}</h2>
+      <p>{t('THERE_ARE_2_TYPES')}</p>
+      <ul className="govuk-list govuk-list--bullet">
+        <li>{t('LFP')}</li>
+        <li>{t('LPP')}</li>
+      </ul>
+      <p>{t('APPEAL_MULTIPLE_PENALTIES')}</p>
+      <p>{t('IF_YOU_HAVE_MORE_THAN_ONE_ACROSS_MULTIPLE_TAX_YEARS')}</p>
+    </div>
+    <Button
+      id="continueToPortal"
+      onClick={createCase}
+      data-prevent-double-click="true"
+      attributes={{ className: 'govuk-!-static-margin-bottom-1' }}
+    >
+      {t('START_NOW')}
+    </Button>
+    <AskHMRC />
+    <p className="govuk-body">
+      <a
+        className="govuk-link"
+        rel="noreferrer noopener"
+        target="_blank"
+        href={`${hmrcURL}contact/report-technical-problem?service=427&referrerUrl=${window.location}`}
+      >
+        {t('PAGE_NOT_WORKING_PROPERLY')} {t('OPENS_IN_NEW_TAB')}
+      </a>
+    </p>
+  </>
+);
 
-11. Conclusion
 
-The PenaltyDetails component, along with its sub-components and helper functions, offers a robust solution for rendering detailed penalty information. The design ensures modularity, scalability, and adherence to accessibility and design standards.
+
 
