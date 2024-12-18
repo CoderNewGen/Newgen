@@ -52,6 +52,7 @@ describe('AppealsAndPenaltiesLanding Component', () => {
 
   test('renders "no penalties" message when no data is fetched', async () => {
     mockFetchData.mockResolvedValueOnce({ data: [] });
+
     render(<AppealsAndPenaltiesLanding {...defaultProps} />);
 
     await waitFor(() => {
@@ -60,7 +61,7 @@ describe('AppealsAndPenaltiesLanding Component', () => {
   });
 
   test('renders penalties section when data is available', async () => {
-    const mockPenaltyData = {
+    mockFetchData.mockResolvedValueOnce({
       data: [
         {
           penaltyData: [
@@ -79,9 +80,7 @@ describe('AppealsAndPenaltiesLanding Component', () => {
           ],
         },
       ],
-    };
-
-    mockFetchData.mockResolvedValueOnce(mockPenaltyData);
+    });
 
     render(<AppealsAndPenaltiesLanding {...defaultProps} />);
 
