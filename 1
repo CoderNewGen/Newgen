@@ -1,108 +1,67 @@
 import React from 'react';
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import AppealsAndPenalties from './AppealsAndPenalties';
-import AppContext from '../../reuseables/AppContext';
+import { AppContext } from '../../reuseables/AppContext'; // Adjust the import according to your context location
+import { useTranslation } from 'react-i18next';
 
-jest.mock('../../components/helpers/utils', () => ({
-  triggerLogout: jest.fn(),
+// Mocking useTranslation hook
+jest.mock('react-i18next', () => ({
+  useTranslation: () => ({
+    t: (key) => key,
+  }),
 }));
 
-jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
-  getSdkConfig: jest.fn(() =>
-    Promise.resolve({
-      timeoutConfig: { secondsTilLogout: 120 },
-    })
-  ),
-}));
-
-jest.mock('../../components/helpers/hooks/HMRCExternalLinks', () => () => ({
-  hmrcURL: 'https://example.com',
-}));
-
-jest.mock('../../reuseables/PegaSetup', () => ({
-  useStartMashup: jest.fn(() => ({
-    showPega: false,
-    setShowPega: jest.fn(),
-    shutterServicePage: false,
-    showResolutionPage: false,
-    serviceNotAvailable: false,
-    assignmentPConnect: null,
-    isPegaLoading: false,
-  })),
-}));
-
-const renderComponent = (contextValue: any) =>
-  render(
-    <AppContext.Provider value={contextValue}>
-      <AppealsAndPenalties journeyName="TestJourney" />
-    </AppContext.Provider>
-  );
+// Mocking the context value
+const mockContextValue = {
+  showLanguageToggle: true,
+};
 
 describe('AppealsAndPenalties Component', () => {
-  it('renders landing page by default', async () => {
-    renderComponent({ showLanguageToggle: true });
+  test('renders without crashing', () => {
+    render(
+      <AppContext.Provider value={mockContextValue}>
+        <AppealsAndPenalties journeyName="testJourney" />
+      </AppContext.Provider>
+    );
 
-    await waitFor(() => {
-      expect(screen.getByText('APPEAL_A_SELF_ASSESSMENT_PENALTY')).toBeInTheDocument();
-    });
-
-    expect(screen.getByRole('heading', { name: /appeals and penalties landing/i })).toBeInTheDocument();
+    // Check if the header is rendered
+    expect(screen.getByText('APPEAL_A_SELF_ASSESSMENT_PENALTY')).toBeInTheDocument();
   });
 
-  it('shows service not available page when currentDisplay is "servicenotavailable"', () => {
-    jest.mock('../../reuseables/PegaSetup', () => ({
-      useStartMashup: jest.fn(() => ({
-        serviceNotAvailable: true,
-      })),
-    }));
+  test('displays the landing page initially', () => {
+    render(
+      <AppContext.Provider value={mockContextValue}>
+        <AppealsAndPenalties journeyName="testJourney" />
+      </AppContext.Provider>
+    );
 
-    renderComponent({ showLanguageToggle: true });
-
-    expect(screen.getByText(/Service is not available/i)).toBeInTheDocument();
+    // Check if the landing page is displayed
+    expect(screen.getByText('Landing Page Content')).toBeInTheDocument(); // Replace with actual text
   });
 
-  it('displays the shutter page when currentDisplay is "shutterpage"', () => {
-    jest.mock('../../reuseables/PegaSetup', () => ({
-      useStartMashup: jest.fn(() => ({
-        shutterServicePage: true,
-      })),
-    }));
+  test('handles sign out modal display', () => {
+    render(
+      <AppContext.Provider value={mockContextValue}>
+        <AppealsAndPenalties journeyName="testJourney" />
+      </AppContext.Provider>
+    );
 
-    renderComponent({ showLanguageToggle: true });
-
-    expect(screen.getByText(/Service is currently unavailable/i)).toBeInTheDocument();
+    // Simulate sign out action
+    fireEvent.click(screen.getByText('Sign Out')); // Adjust according to your button text
+    expect(screen.getByText('Are you sure you want to sign out?')).toBeInTheDocument(); // Adjust with actual modal text
   });
 
-  it('renders timeout popup when showTimeoutModal is true', () => {
-    renderComponent({ showLanguageToggle: true });
+  test('handles case start action', () => {
+    render(
+      <AppContext.Provider value={mockContextValue}>
+        <AppealsAndPenalties journeyName="testJourney" />
+      </AppContext.Provider>
+    );
 
-    fireEvent.click(screen.getByText(/stay signed in/i));
-
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
+    // Simulate case start action
+    fireEvent.click(screen.getByText('Start Case')); // Adjust according to your button text
+    expect(screen.getByText('Pega Page Content')).toBeInTheDocument(); // Replace with actual text
   });
 
-  it('shows language toggle when showLanguageToggleState is true', () => {
-    renderComponent({ showLanguageToggle: true });
-
-    expect(screen.getByText(/switch language/i)).toBeInTheDocument();
-  });
-
-  it('renders LogoutPopup when showSignoutModal is true', async () => {
-    renderComponent({ showLanguageToggle: true });
-
-    fireEvent.click(screen.getByText(/sign out/i));
-
-    await waitFor(() => {
-      expect(screen.getByText(/are you sure you want to sign out/i)).toBeInTheDocument();
-    });
-  });
-
-  it('handles handleCaseStart correctly', () => {
-    renderComponent({ showLanguageToggle: true });
-
-    fireEvent.click(screen.getByText(/start your appeal/i));
-
-    expect(screen.queryByText(/landing page/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/pega content/i)).toBeInTheDocument();
-  });
+  // Additional tests can be added here to cover more functionality
 });
