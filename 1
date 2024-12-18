@@ -1,185 +1,108 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
-import '@testing-library/jest-dom';
-import AppealsAndPenaltiesLanding from './AppealsAndPenaltiesLanding';
-import { useTranslation } from 'react-i18next';
-import useHMRCExternalLinks from '../../../components/helpers/hooks/HMRCExternalLinks';
+import AppealsAndPenalties from './AppealsAndPenalties';
+import AppContext from '../../reuseables/AppContext';
 
-// Mock dependencies
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key: string) => key,
-  }),
+jest.mock('../../components/helpers/utils', () => ({
+  triggerLogout: jest.fn(),
 }));
 
-jest.mock('../../../components/helpers/hooks/HMRCExternalLinks', () => ({
-  default: () => ({ hmrcURL: 'https://www.hmrc.gov.uk/' }),
+jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
+  getSdkConfig: jest.fn(() =>
+    Promise.resolve({
+      timeoutConfig: { secondsTilLogout: 120 },
+    })
+  ),
 }));
 
-const mockFetchData = jest.fn();
-const mockCreateCase = jest.fn();
-const mockHandleCaseStart = jest.fn();
+jest.mock('../../components/helpers/hooks/HMRCExternalLinks', () => () => ({
+  hmrcURL: 'https://example.com',
+}));
 
-const defaultProps = {
-  isLogout: false,
-  pConn: {
-    getContextName: () => 'mockContext',
-    getMashupApi: () => ({
-      createCase: mockCreateCase,
-    }),
-    getDataPageUtils: () => ({
-      getDataAsync: mockFetchData,
-    }),
-    getConstants: () => ({
-      APP: { APP: 'mockApp' },
-    }),
-  },
-  penaltyDataEndpoint: '/mock/penalty-data-endpoint',
-  creatCaseEndpoint: '/mock/create-case-endpoint',
-  handleCaseStart: mockHandleCaseStart,
-};
+jest.mock('../../reuseables/PegaSetup', () => ({
+  useStartMashup: jest.fn(() => ({
+    showPega: false,
+    setShowPega: jest.fn(),
+    shutterServicePage: false,
+    showResolutionPage: false,
+    serviceNotAvailable: false,
+    assignmentPConnect: null,
+    isPegaLoading: false,
+  })),
+}));
 
-describe('AppealsAndPenaltiesLanding Component', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-  });
+const renderComponent = (contextValue: any) =>
+  render(
+    <AppContext.Provider value={contextValue}>
+      <AppealsAndPenalties journeyName="TestJourney" />
+    </AppContext.Provider>
+  );
 
-  test('renders correctly with default props', () => {
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    expect(screen.getByRole('main')).toBeInTheDocument();
-    expect(screen.getByText('YOUR_SELF_ASSESMENT_PENALTIES')).toBeInTheDocument();
-  });
-
-  test('renders "no penalties" message when no data is fetched', async () => {
-    mockFetchData.mockResolvedValueOnce({ data: [] });
-
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
+describe('AppealsAndPenalties Component', () => {
+  it('renders landing page by default', async () => {
+    renderComponent({ showLanguageToggle: true });
 
     await waitFor(() => {
-      expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
+      expect(screen.getByText('APPEAL_A_SELF_ASSESSMENT_PENALTY')).toBeInTheDocument();
     });
+
+    expect(screen.getByRole('heading', { name: /appeals and penalties landing/i })).toBeInTheDocument();
   });
 
-  test('renders penalties section when data is available', async () => {
-    mockFetchData.mockResolvedValueOnce({
-      data: [
-        {
-          penaltyData: [
-            {
-              duration: '2022-2023',
-              penalties: [
-                {
-                  penaltyType: 'Late Filing',
-                  results: [
-                    { PenaltyNumber: 1, AdditionalInfo: 'Missed deadline', Amount: 100 },
-                  ],
-                  totalAmount: 100,
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    });
+  it('shows service not available page when currentDisplay is "servicenotavailable"', () => {
+    jest.mock('../../reuseables/PegaSetup', () => ({
+      useStartMashup: jest.fn(() => ({
+        serviceNotAvailable: true,
+      })),
+    }));
 
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
+    renderComponent({ showLanguageToggle: true });
+
+    expect(screen.getByText(/Service is not available/i)).toBeInTheDocument();
+  });
+
+  it('displays the shutter page when currentDisplay is "shutterpage"', () => {
+    jest.mock('../../reuseables/PegaSetup', () => ({
+      useStartMashup: jest.fn(() => ({
+        shutterServicePage: true,
+      })),
+    }));
+
+    renderComponent({ showLanguageToggle: true });
+
+    expect(screen.getByText(/Service is currently unavailable/i)).toBeInTheDocument();
+  });
+
+  it('renders timeout popup when showTimeoutModal is true', () => {
+    renderComponent({ showLanguageToggle: true });
+
+    fireEvent.click(screen.getByText(/stay signed in/i));
+
+    expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('shows language toggle when showLanguageToggleState is true', () => {
+    renderComponent({ showLanguageToggle: true });
+
+    expect(screen.getByText(/switch language/i)).toBeInTheDocument();
+  });
+
+  it('renders LogoutPopup when showSignoutModal is true', async () => {
+    renderComponent({ showLanguageToggle: true });
+
+    fireEvent.click(screen.getByText(/sign out/i));
 
     await waitFor(() => {
-      expect(screen.getByText('YOU_CAN_MAKE_AN_APPEAL')).toBeInTheDocument();
-      expect(screen.getByText('Late Filing')).toBeInTheDocument();
-      expect(screen.getByText('Missed deadline')).toBeInTheDocument();
+      expect(screen.getByText(/are you sure you want to sign out/i)).toBeInTheDocument();
     });
   });
 
-  test('handles createCase button click', async () => {
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    const startNowButton = screen.getByText('START_NOW');
+  it('handles handleCaseStart correctly', () => {
+    renderComponent({ showLanguageToggle: true });
 
-    fireEvent.click(startNowButton);
+    fireEvent.click(screen.getByText(/start your appeal/i));
 
-    expect(mockCreateCase).toHaveBeenCalledWith(
-      defaultProps.creatCaseEndpoint,
-      'mockApp'
-    );
-    expect(mockHandleCaseStart).toHaveBeenCalled();
-  });
-
-  test('renders logout state correctly', () => {
-    render(<AppealsAndPenaltiesLanding {...defaultProps} isLogout={true} />);
-    expect(screen.getByRole('main')).toHaveClass('visibility-hidden');
-  });
-
-  test('renders "Page not working properly" link with correct URL', () => {
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    const link = screen.getByText('PAGE_NOT_WORKING_PROPERLY');
-    expect(link).toHaveAttribute(
-      'href',
-      'https://www.hmrc.gov.uk/contact/report-technical-problem?service=427&referrerUrl=' +
-        window.location
-    );
-  });
-});
-
-describe('Edge Cases for AppealsAndPenaltiesLanding', () => {
-  test('handles API error gracefully when fetching data', async () => {
-    mockFetchData.mockRejectedValueOnce(new Error('API error'));
-
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('YOUR_SELF_ASSESMENT_PENALTIES')).toBeInTheDocument();
-    });
-
-    // No penalties section should render
-    expect(screen.queryByText('YOU_CAN_MAKE_AN_APPEAL')).not.toBeInTheDocument();
-  });
-
-  test('handles empty penaltyData gracefully', async () => {
-    mockFetchData.mockResolvedValueOnce({ data: [] });
-
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
-    });
-  });
-
-  test('handles penalties with missing fields gracefully', async () => {
-    const incompletePenaltyData = {
-      data: [
-        {
-          penaltyData: [
-            {
-              duration: '2022-2023',
-              penalties: [
-                {
-                  penaltyType: null,
-                  results: [{ PenaltyNumber: null, AdditionalInfo: null, Amount: null }],
-                },
-              ],
-            },
-          ],
-        },
-      ],
-    };
-
-    mockFetchData.mockResolvedValueOnce(incompletePenaltyData);
-
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('YOUR_SELF_ASSESMENT_PENALTIES')).toBeInTheDocument();
-      expect(screen.queryByText('null')).not.toBeInTheDocument(); // Ensure missing data does not render as "null"
-    });
-  });
-
-  test('renders correctly when penaltyData is undefined', async () => {
-    mockFetchData.mockResolvedValueOnce(undefined);
-
-    render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-
-    await waitFor(() => {
-      expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
-    });
+    expect(screen.queryByText(/landing page/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/pega content/i)).toBeInTheDocument();
   });
 });
