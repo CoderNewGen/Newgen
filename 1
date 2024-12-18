@@ -1,229 +1,116 @@
 import React from 'react';
-import { render, screen } from '@testing-library/react';
-import { PenaltyDatails } from './PenaltyDatails';
-import { useTranslation } from 'react-i18next';
+import { render, screen, fireEvent } from '@testing-library/react';
+import AppealsAndPenaltiesLanding from './AppealsAndPenaltiesLanding'; // Adjust the import based on your file structure
+import { useTranslation } from 'react-i18next'; // Assuming you are using react-i18next for translations
 
-// Mock i18n
 jest.mock('react-i18next', () => ({
   useTranslation: () => ({
-    t: (key: string) => key,
+    t: (key) => key, // Mock translation function
   }),
 }));
 
-const mockPenaltyData = [
-  {
-    duration: '2022-2023',
-    penalties: [
-      {
-        penaltyType: 'Late Filing',
-        results: [
-          {
-            PenaltyNumber: 1,
-            AdditionalInfo: 'Missed deadline by 5 days',
-            Amount: 100.5,
-          },
-          {
-            PenaltyNumber: 2,
-            AdditionalInfo: 'Missed deadline by 15 days',
-            Amount: 200.75,
-          },
-        ],
-        totalAmount: 301.25,
-      },
-    ],
-  },
-];
+describe('AppealsAndPenaltiesLanding', () => {
+  const createCaseMock = jest.fn();
+  
+  const renderComponent = (dashboardData = [], isLogout = false) => {
+    render(<AppealsAndPenaltiesLanding createCase={createCaseMock} dashboardData={dashboardData} isLogout={isLogout} />);
+  };
 
-describe('PenaltyDatails Component', () => {
-  test('renders no penalties message when penaltyData is empty', () => {
-    render(<PenaltyDatails penaltyData={[]} />);
-    expect(screen.getByText('NO_PENALTIES_AVAILABLE')).toBeInTheDocument();
+  test('renders the main heading', () => {
+    renderComponent();
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('YOUR_SELF_ASSESMENT_PENALTIES');
   });
 
-  test('renders duration heading for penalties', () => {
-    render(<PenaltyDatails penaltyData={mockPenaltyData} />);
-    expect(screen.getByText('PENALTIES_FOR_THE 2022-2023 TAX_YEAR')).toBeInTheDocument();
+  test('displays no penalties message when dashboardData is empty', () => {
+    renderComponent();
+    expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
   });
 
-  test('renders penalty cards with correct details', () => {
-    render(<PenaltyDatails penaltyData={mockPenaltyData} />);
-
-    // Verify penalty type
-    expect(screen.getByText('Late Filing')).toBeInTheDocument();
-
-    // Verify penalty rows
-    expect(screen.getByText('1st PENALTY')).toBeInTheDocument();
-    expect(screen.getByText('Missed deadline by 5 days')).toBeInTheDocument();
-    expect(screen.getByText('£100.5')).toBeInTheDocument();
-
-    expect(screen.getByText('2nd PENALTY')).toBeInTheDocument();
-    expect(screen.getByText('Missed deadline by 15 days')).toBeInTheDocument();
-    expect(screen.getByText('£200.75')).toBeInTheDocument();
-
-    // Verify total amount
-    expect(screen.getByText('£301.25')).toBeInTheDocument();
+  test('handles null dashboardData gracefully', () => {
+    renderComponent(null);
+    expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
   });
 
-  test('renders multiple penalties if present', () => {
-    const multiplePenaltiesData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'Late Filing',
-            results: [
-              { PenaltyNumber: 1, AdditionalInfo: 'Missed deadline by 10 days', Amount: 150 },
-            ],
-            totalAmount: 150,
-          },
-          {
-            penaltyType: 'Late Payment',
-            results: [
-              { PenaltyNumber: 1, AdditionalInfo: 'Payment delayed by 5 days', Amount: 50 },
-            ],
-            totalAmount: 50,
-          },
-        ],
-      },
+  test('handles undefined dashboardData gracefully', () => {
+    renderComponent(undefined);
+    expect(screen.getByText('YOU_DO_NOT_HAVE_SA_PENALTIES')).toBeInTheDocument();
+  });
+
+  test('renders penalties section when dashboardData is populated', () => {
+    const dashboardDataWithPenalties = [{ id: 1, type: 'LFP' }];
+    renderComponent(dashboardDataWithPenalties);
+    
+    expect(screen.getByText('YOU_CAN_ALSO_TELL_US')).toBeInTheDocument();
+    expect(screen.getByText('IF_YOU_HAVE_MORE_THAN_ONE')).toBeInTheDocument();
+    expect(screen.getByText('THERE_ARE_2_TYPES')).toBeInTheDocument();
+    expect(screen.getByText('LFP')).toBeInTheDocument();
+    expect(screen.getByText('LPP')).toBeInTheDocument();
+    expect(screen.getByText('APPEAL_MULTIPLE_PENALTIES')).toBeInTheDocument();
+    expect(screen.getByText('IF_YOU_HAVE_MORE_THAN_ONE_ACROSS_MULTIPLE_TAX_YEARS')).toBeInTheDocument();
+  });
+
+  test('handles empty penalty types gracefully', () => {
+    const dashboardDataWithEmptyPenaltyTypes = [{ id: 1, type: '' }, { id: 2, type: null }];
+    renderComponent(dashboardDataWithEmptyPenaltyTypes);
+    
+    expect(screen.getByText('YOU_CAN_ALSO_TELL_US')).toBeInTheDocument();
+    expect(screen.getByText('IF_YOU_HAVE_MORE_THAN_ONE')).toBeInTheDocument();
+    expect(screen.getByText('THERE_ARE_2_TYPES')).toBeInTheDocument();
+    // Check if no empty penalty types are rendered
+    expect(screen.queryByText('')).not.toBeInTheDocument();
+  });
+
+  test('renders multiple penalties correctly', () => {
+    const dashboardDataWithMultiplePenalties = [
+      { id: 1, type: 'LFP' },
+      { id: 2, type: 'LPP' },
     ];
-
-    render(<PenaltyDatails penaltyData={multiplePenaltiesData} />);
-
-    expect(screen.getByText('Late Filing')).toBeInTheDocument();
-    expect(screen.getByText('Late Payment')).toBeInTheDocument();
-  });
-});
-
-describe('PenaltyDatails Component - Edge Cases', () => {
-  test('renders no penalties message when penaltyData is undefined', () => {
-    render(<PenaltyDatails penaltyData={undefined} />);
-    expect(screen.getByText('NO_PENALTIES_AVAILABLE')).toBeInTheDocument();
+    renderComponent(dashboardDataWithMultiplePenalties);
+    
+    expect(screen.getByText('LFP')).toBeInTheDocument();
+    expect(screen.getByText('LPP')).toBeInTheDocument();
   });
 
-  test('handles penaltyData with empty penalties array gracefully', () => {
-    const emptyPenaltiesData = [{ duration: '2022-2023', penalties: [] }];
-    render(<PenaltyDatails penaltyData={emptyPenaltiesData} />);
-    expect(screen.getByText('PENALTIES_FOR_THE 2022-2023 TAX_YEAR')).toBeInTheDocument();
-    expect(screen.queryByText('PENALTY')).not.toBeInTheDocument();
+  test('handles large datasets without crashing', () => {
+    const largeDashboardData = Array.from({ length: 100 }, (_, index) => ({ id: index, type: index % 2 === 0 ? 'LFP' : 'LPP' }));
+    renderComponent(largeDashboardData);
+    
+    expect(screen.getByText('LFP')).toBeInTheDocument();
+    expect(screen.getByText('LPP')).toBeInTheDocument();
   });
 
-  test('handles penaltyData with missing fields gracefully', () => {
-    const incompletePenaltyData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'Late Filing',
-            results: [
-              { PenaltyNumber: undefined, AdditionalInfo: undefined, Amount: undefined },
-            ],
-            totalAmount: 0,
-          },
-        ],
-      },
-    ];
-    render(<PenaltyDatails penaltyData={incompletePenaltyData} />);
-
-    // Verify placeholders or absence of broken data
-    expect(screen.getByText('Late Filing')).toBeInTheDocument();
-    expect(screen.getByText('£0')).toBeInTheDocument();
-    expect(screen.queryByText('PENALTY')).not.toBeInTheDocument(); // No penalty ordinal rendered
+  test('calls createCase function when button is clicked', () => {
+    renderComponent([{ id: 1, type: 'LFP' }]);
+    const button = screen.getByRole('button', { name: 'START_NOW' });
+    fireEvent.click(button);
+    
+    expect(createCaseMock).toHaveBeenCalledTimes(1);
   });
 
-  test('handles penalties with 0 amount', () => {
-    const zeroAmountPenaltyData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'Zero Amount Penalty',
-            results: [{ PenaltyNumber: 1, AdditionalInfo: 'No charge', Amount: 0 }],
-            totalAmount: 0,
-          },
-        ],
-      },
-    ];
-    render(<PenaltyDatails penaltyData={zeroAmountPenaltyData} />);
-
-    expect(screen.getByText('Zero Amount Penalty')).toBeInTheDocument();
-    expect(screen.getByText('1st PENALTY')).toBeInTheDocument();
-    expect(screen.getByText('No charge')).toBeInTheDocument();
-    expect(screen.getByText('£0')).toBeInTheDocument();
+  test('renders link to report a technical problem', () => {
+    renderComponent();
+    const link = screen.getByRole('link', { name: /PAGE_NOT_WORKING_PROPERLY OPENS_IN_NEW_TAB/i });
+    expect(link).toHaveAttribute('href', expect.stringContaining('contact/report-technical-problem'));
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noreferrer noopener');
   });
 
-  test('renders multiple durations correctly', () => {
-    const multipleDurationsData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'Late Filing',
-            results: [{ PenaltyNumber: 1, AdditionalInfo: 'Missed deadline', Amount: 100 }],
-            totalAmount: 100,
-          },
-        ],
-      },
-      {
-        duration: '2021-2022',
-        penalties: [
-          {
-            penaltyType: 'Late Payment',
-            results: [{ PenaltyNumber: 1, AdditionalInfo: 'Late payment', Amount: 50 }],
-            totalAmount: 50,
-          },
-        ],
-      },
-    ];
-    render(<PenaltyDatails penaltyData={multipleDurationsData} />);
-
-    expect(screen.getByText('PENALTIES_FOR_THE 2022-2023 TAX_YEAR')).toBeInTheDocument();
-    expect(screen.getByText('Late Filing')).toBeInTheDocument();
-    expect(screen.getByText('£100')).toBeInTheDocument();
-
-    expect(screen.getByText('PENALTIES_FOR_THE 2021-2022 TAX_YEAR')).toBeInTheDocument();
-    expect(screen.getByText('Late Payment')).toBeInTheDocument();
-    expect(screen.getByText('£50')).toBeInTheDocument();
+  test('renders the button correctly', () => {
+    renderComponent([{ id: 1, type: 'LFP' }]);
+    const button = screen.getByRole('button', { name: 'START_NOW' });
+    expect(button).toBeInTheDocument();
+    expect(button).toHaveAttribute('data-prevent-double-click', 'true');
   });
 
-  test('handles penalties with large amounts correctly', () => {
-    const largeAmountPenaltyData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'High Value Penalty',
-            results: [{ PenaltyNumber: 1, AdditionalInfo: 'Significant delay', Amount: 1000000.5 }],
-            totalAmount: 1000000.5,
-          },
-        ],
-      },
-    ];
-    render(<PenaltyDatails penaltyData={largeAmountPenaltyData} />);
-
-    expect(screen.getByText('High Value Penalty')).toBeInTheDocument();
-    expect(screen.getByText('£1000000.5')).toBeInTheDocument();
+  test('hides main content when isLogout is true', () => {
+    renderComponent([], true);
+    expect(screen.getByRole('main')).toHaveClass('visibility-hidden');
   });
 
-  test('renders penaltyData with only a single penalty section', () => {
-    const singlePenaltyData = [
-      {
-        duration: '2022-2023',
-        penalties: [
-          {
-            penaltyType: 'Single Penalty Type',
-            results: [
-              { PenaltyNumber: 1, AdditionalInfo: 'Single instance penalty', Amount: 50.5 },
-            ],
-            totalAmount: 50.5,
-          },
-        ],
-      },
-    ];
-    render(<PenaltyDatails penaltyData={singlePenaltyData} />);
-
-    expect(screen.getByText('Single Penalty Type')).toBeInTheDocument();
-    expect(screen.getByText('1st PENALTY')).toBeInTheDocument();
-    expect(screen.getByText('Single instance penalty')).toBeInTheDocument();
-    expect(screen.getByText('£50.5')).toBeInTheDocument();
+  test('shows main content when isLogout is false', () => {
+    renderComponent([], false);
+    expect(screen.getByRole('main')).not.toHaveClass('visibility-hidden');
   });
+
+  // Additional tests can be added here to cover more scenarios
 });
