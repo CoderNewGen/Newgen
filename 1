@@ -1,24 +1,8 @@
-111
-
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import AppSelector from './AppSelector';
-import Registration from '../Registration/index';
-import CookiePage from '../Registration/cookiePage/index';
-import Accessibility from '../Registration/AccessibilityPage';
-import AccessibilityCessation from '../Cessation/AccessibilityPage';
-import Cessation from '../Cessation';
-import AppealsAndPenalties from '../AppealsAndPenalties';
-import AccessibilityAppealsAndPenalties from '../AppealsAndPenalties/AccessibilityPage';
-import ProtectedRoute from '../../components/HOC/ProtectedRoute';
-import AppWrapper from '../../components/AppComponents/AppWrapper';
-
-// Mock i18n initialization
-jest.mock('i18next', () => ({
-  use: jest.fn(),
-  init: jest.fn(() => Promise.resolve()),
-}));
+import i18n from 'i18next';
 
 // Mock components
 jest.mock('../Registration/index', () => () => <div>Registration Component</div>);
@@ -30,6 +14,12 @@ jest.mock('../AppealsAndPenalties', () => () => <div>AppealsAndPenalties Compone
 jest.mock('../AppealsAndPenalties/AccessibilityPage', () => () => <div>AccessibilityAppealsAndPenalties Component</div>);
 jest.mock('../../components/HOC/ProtectedRoute', () => ({ component: Component }) => <div>ProtectedRoute: <Component /></div>);
 jest.mock('../../components/AppComponents/AppWrapper', () => ({ children }) => <div>AppWrapper: {children}</div>);
+
+// Mock i18n initialization
+jest.mock('i18next', () => ({
+  use: jest.fn().mockReturnThis(),
+  init: jest.fn(() => Promise.resolve()),
+}));
 
 describe('AppSelector Component', () => {
   beforeEach(() => {
