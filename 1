@@ -1,64 +1,173 @@
 import React from "react";
-import { Navigate, useLocation, useNavigate } from "react-router-dom";
+import { render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
+import ProtectedRoute from "./ProtectedRoute";
 
-import {
-  getSdkConfig,
-  loginIfNecessary,
-  sdkIsLoggedIn,
-  sdkSetAuthHeader
-} from "@pega/auth/lib/sdk-auth-manager";
+// Mock React Router hooks
+jest.mock("react-router-dom", () => ({
+  ...jest.requireActual("react-router-dom"),
+  useNavigate: jest.fn(),
+  useLocation: jest.fn(() => ({ pathname: "/protected" })),
+}));
 
-/**
- * ProtectedRoute: A wrapper around a route that ensures the user is authenticated before rendering the component.
- * If the user is not logged in, it triggers authentication and redirects to the appropriate login flow.
- */
-const ProtectedRoute = ({ component: Component, ...rest }) => {
-  const location = useLocation(); // Get the current location
-  const navigate = useNavigate(); // React Router v6 replacement for useHistory()
+// Mock authentication functions
+jest.mock("@pega/auth/lib/sdk-auth-manager", () => ({
+  getSdkConfig: jest.fn(() => Promise.resolve({ authConfig: {} })),
+  loginIfNecessary: jest.fn(),
+  sdkIsLoggedIn: jest.fn(),
+  sdkSetAuthHeader: jest.fn(),
+}));
 
-  /**
-   * Called after a successful login redirect. Ensures the user is navigated to the correct page.
-   */
-  const onRedirectDone = () => {
-    navigate(location.pathname, { replace: true }); // Replaces history.replace()
-    loginIfNecessary({ appName: "sa", mainRedirect: true });
-  };
+import { sdkIsLoggedIn, loginIfNecessary } from "@pega/auth/lib/sdk-auth-manager";
 
-  // If the user is not logged in, initiate login flow
-  if (!sdkIsLoggedIn()) {
-    getSdkConfig().then((sdkConfig) => {
-      const sdkConfigAuth = sdkConfig.authConfig;
+const MockComponent = () => <div>Protected Content</div>;
 
-      if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "Basic") {
-        // Service package to use custom auth with Basic
-        const sB64 = window.btoa(
-          `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}`
-        );
-        sdkSetAuthHeader(`Basic ${sB64}`);
-      }
+describe("ProtectedRoute Component", () => {
+  afterEach(() => {
+    jest.clearAllMocks();
+  });
 
-      if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "BasicTO") {
-        const now = new Date();
-        const expTime = new Date(now.getTime() + 5 * 60 * 1000); // Token expiration time: 5 minutes
-        let sISOTime = `${expTime.toISOString().split(".")[0]}Z`;
-        sISOTime = sISOTime.replace(/[-:]/g, "");
-        // Service package to use custom auth with BasicTO
-        const sB64 = window.btoa(
-          `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}:${sISOTime}`
-        );
-        sdkSetAuthHeader(`Basic ${sB64}`);
-      }
+  test("Redirects to login if user is not authenticated", async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
 
-      // Login if needed, ensuring no initial main window redirect
-      loginIfNecessary({ appName: "sa", mainRedirect: true, redirectDoneCB: onRedirectDone });
+    render(
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
+      </MemoryRouter>
+    );
+
+    expect(loginIfNecessary).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Protected Content")).not.toBeInTheDocument();
+  });
+
+  test("Renders component if user is authenticated", () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(true);
+
+    render(
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText("Protected Content")).toBeInTheDocument();
+    expect(loginIfNecessary).not.toHaveBeenCalled();
+  });
+});
+
+
+import React from "react";
+import { render, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes } from "react-router-dom";
+import AppSelector from "./AppSelector";
+import i18n from "i18next";
+import { initReactI18next } from "react-i18next";
+import Backend from "i18next-http-backend";
+
+// Mock i18n initialization
+jest.mock("i18next", () => ({
+  ...jest.requireActual("i18next"),
+  use: jest.fn().mockReturnThis(),
+  init: jest.fn().mockResolvedValue(undefined),
+}));
+
+jest.mock("i18next-http-backend", () => ({
+  __esModule: true,
+  default: jest.fn(),
+}));
+
+jest.mock("react-i18next", () => ({
+  useTranslation: () => ({ t: (key: string) => key }),
+  initReactI18next: { type: "3rdParty", init: jest.fn() },
+}));
+
+// Mock ProtectedRoute component to avoid full authentication setup
+jest.mock("../../components/HOC/ProtectedRoute", () => ({
+  __esModule: true,
+  default: ({ component: Component }: { component: React.FC }) => <Component />,
+}));
+
+// Mock Components for routes
+jest.mock("../Registration/index", () => () => <div>Registration Page</div>);
+jest.mock("../Cessation", () => () => <div>Cessation Page</div>);
+jest.mock("../AppealsAndPenalties", () => () => <div>Appeals and Penalties Page</div>);
+jest.mock("../Registration/cookiePage/index", () => () => <div>Cookie Page</div>);
+jest.mock("../Registration/AccessibilityPage", () => () => <div>Registration Accessibility Page</div>);
+jest.mock("../Cessation/AccessibilityPage", () => () => <div>Cessation Accessibility Page</div>);
+jest.mock("../AppealsAndPenalties/AccessibilityPage", () => () => <div>Appeals Accessibility Page</div>);
+
+// Mock Page Title Helper
+jest.mock("../../components/helpers/setPageTitleHelpers", () => jest.fn());
+
+describe("AppSelector Component", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  test("Initializes i18n correctly", async () => {
+    render(
+      <MemoryRouter>
+        <AppSelector />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(i18n.init).toHaveBeenCalled();
     });
+  });
 
-    // Redirect to login page while maintaining the original requested location
-    return <Navigate to="/" state={{ from: location }} replace />;
-  }
+  test("Redirects '/' to '/registration'", async () => {
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route path="*" element={<AppSelector />} />
+        </Routes>
+      </MemoryRouter>
+    );
 
-  // Render the protected component if the user is authenticated
-  return <Component {...rest} journeyName={rest.journeyName} />;
-};
+    await waitFor(() => {
+      expect(screen.getByText("Registration Page")).toBeInTheDocument();
+    });
+  });
 
-export default ProtectedRoute;
+  test("Renders protected routes correctly", async () => {
+    render(
+      <MemoryRouter initialEntries={["/cessation"]}>
+        <Routes>
+          <Route path="*" element={<AppSelector />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Cessation Page")).toBeInTheDocument();
+    });
+  });
+
+  test("Renders public routes correctly", async () => {
+    render(
+      <MemoryRouter initialEntries={["/registration-cookies"]}>
+        <Routes>
+          <Route path="*" element={<AppSelector />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Cookie Page")).toBeInTheDocument();
+    });
+  });
+
+  test("Renders accessibility pages correctly", async () => {
+    render(
+      <MemoryRouter initialEntries={["/registration-accessibility"]}>
+        <Routes>
+          <Route path="*" element={<AppSelector />} />
+        </Routes>
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Registration Accessibility Page")).toBeInTheDocument();
+    });
+  });
+});
