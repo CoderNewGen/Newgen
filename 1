@@ -1,67 +1,157 @@
-import React from 'react';
-import { render, screen, fireEvent } from '@testing-library/react';
-import AppealsAndPenalties from './AppealsAndPenalties';
-import { AppContext } from '../../reuseables/AppContext'; // Adjust the import according to your context location
-import { useTranslation } from 'react-i18next';
+import React from "react";
+import { Navigate, useLocation } from "react-router-dom";
 
-// Mocking useTranslation hook
-jest.mock('react-i18next', () => ({
-  useTranslation: () => ({
-    t: (key) => key,
-  }),
-}));
+import {
+  getSdkConfig,
+  loginIfNecessary,
+  sdkIsLoggedIn,
+  sdkSetAuthHeader
+} from "@pega/auth/lib/sdk-auth-manager";
 
-// Mocking the context value
-const mockContextValue = {
-  showLanguageToggle: true,
+const ProtectedRoute = ({ component: Component, ...rest }) => {
+  const location = useLocation(); // Get the current location
+
+  const onRedirectDone = () => {
+    loginIfNecessary({ appName: "sa", mainRedirect: true });
+  };
+
+  if (!sdkIsLoggedIn()) {
+    getSdkConfig().then((sdkConfig) => {
+      const sdkConfigAuth = sdkConfig.authConfig;
+      if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "Basic") {
+        const sB64 = window.btoa(
+          `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}`
+        );
+        sdkSetAuthHeader(`Basic ${sB64}`);
+      }
+
+      if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "BasicTO") {
+        const now = new Date();
+        const expTime = new Date(now.getTime() + 5 * 60 * 1000);
+        let sISOTime = `${expTime.toISOString().split(".")[0]}Z`;
+        sISOTime = sISOTime.replace(/[-:]/g, "");
+        const sB64 = window.btoa(
+          `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}:${sISOTime}`
+        );
+        sdkSetAuthHeader(`Basic ${sB64}`);
+      }
+
+      loginIfNecessary({ appName: "sa", mainRedirect: true, redirectDoneCB: onRedirectDone });
+    });
+
+    return <Navigate to="/" state={{ from: location }} replace />;
+  }
+
+  return <Component {...rest} journeyName={rest.journeyName} />;
 };
 
-describe('AppealsAndPenalties Component', () => {
-  test('renders without crashing', () => {
-    render(
-      <AppContext.Provider value={mockContextValue}>
-        <AppealsAndPenalties journeyName="testJourney" />
-      </AppContext.Provider>
-    );
+export default ProtectedRoute;
 
-    // Check if the header is rendered
-    expect(screen.getByText('APPEAL_A_SELF_ASSESSMENT_PENALTY')).toBeInTheDocument();
-  });
+import React, { useEffect, useState } from "react";
+import { Routes, Route, Navigate } from "react-router-dom";
+import { initReactI18next } from "react-i18next";
+import Backend from "i18next-http-backend";
+import i18n from "i18next";
+import Registration from "../Registration/index";
+import CookiePage from "../Registration/cookiePage/index";
+import Accessibility from "../Registration/AccessibilityPage";
+import AccessibilityCessation from "../Cessation/AccessibilityPage";
+import setPageTitle from "../../components/helpers/setPageTitleHelpers";
+import ProtectedRoute from "../../components/HOC/ProtectedRoute";
+import Cessation from "../Cessation";
+import AppealsAndPenalties from "../AppealsAndPenalties";
+import AppWrapper from "../../components/AppComponents/AppWrapper";
+import AccessibilityAppealsAndPenalties from "../AppealsAndPenalties/AccessibilityPage";
 
-  test('displays the landing page initially', () => {
-    render(
-      <AppContext.Provider value={mockContextValue}>
-        <AppealsAndPenalties journeyName="testJourney" />
-      </AppContext.Provider>
-    );
+const AppSelector = () => {
+  const [i18nloaded, seti18nloaded] = useState(false);
 
-    // Check if the landing page is displayed
-    expect(screen.getByText('Landing Page Content')).toBeInTheDocument(); // Replace with actual text
-  });
+  useEffect(() => {
+    i18n
+      .use(Backend)
+      .use(initReactI18next)
+      .init({
+        lng: sessionStorage.getItem("rsdk_locale")?.substring(0, 2) || "en",
+        backend: {
+          loadPath: `assets/i18n/{{lng}}.json`,
+        },
+        fallbackLng: "en",
+        debug: false,
+        returnNull: false,
+        react: {
+          useSuspense: false,
+        },
+      })
+      .finally(() => {
+        seti18nloaded(true);
+        setPageTitle();
+      });
+  }, []);
 
-  test('handles sign out modal display', () => {
-    render(
-      <AppContext.Provider value={mockContextValue}>
-        <AppealsAndPenalties journeyName="testJourney" />
-      </AppContext.Provider>
-    );
+  return !i18nloaded ? null : (
+    <Routes>
+      {/* Redirect Root to Registration */}
+      <Route path="/" element={<Navigate to="/registration" replace />} />
 
-    // Simulate sign out action
-    fireEvent.click(screen.getByText('Sign Out')); // Adjust according to your button text
-    expect(screen.getByText('Are you sure you want to sign out?')).toBeInTheDocument(); // Adjust with actual modal text
-  });
+      {/* Private Routes */}
+      <Route path="/registration" element={<ProtectedRoute component={Registration} journeyName="registration" />} />
+      <Route path="/cessation" element={<ProtectedRoute component={Cessation} journeyName="cessation" />} />
+      <Route
+        path="/appeal-a-self-assessment-penalty"
+        element={<ProtectedRoute component={AppealsAndPenalties} journeyName="appeal-a-self-assessment-penalty" />}
+      />
 
-  test('handles case start action', () => {
-    render(
-      <AppContext.Provider value={mockContextValue}>
-        <AppealsAndPenalties journeyName="testJourney" />
-      </AppContext.Provider>
-    );
+      {/* Public Routes */}
+      <Route
+        path="/registration-cookies"
+        element={
+          <AppWrapper baseurl="registration">
+            <CookiePage />
+          </AppWrapper>
+        }
+      />
+      <Route
+        path="/registration-accessibility"
+        element={
+          <AppWrapper baseurl="registration">
+            <Accessibility />
+          </AppWrapper>
+        }
+      />
+      <Route
+        path="/cessation-cookies"
+        element={
+          <AppWrapper baseurl="cessation">
+            <CookiePage />
+          </AppWrapper>
+        }
+      />
+      <Route
+        path="/cessation-accessibility"
+        element={
+          <AppWrapper baseurl="cessation">
+            <AccessibilityCessation />
+          </AppWrapper>
+        }
+      />
+      <Route
+        path="/appeal-a-self-assessment-penalty-cookies"
+        element={
+          <AppWrapper baseurl="appeal-a-self-assessment-penalty">
+            <CookiePage />
+          </AppWrapper>
+        }
+      />
+      <Route
+        path="/appeal-a-self-assessment-penalty-accessibility"
+        element={
+          <AppWrapper baseurl="appeal-a-self-assessment-penalty">
+            <AccessibilityAppealsAndPenalties />
+          </AppWrapper>
+        }
+      />
+    </Routes>
+  );
+};
 
-    // Simulate case start action
-    fireEvent.click(screen.getByText('Start Case')); // Adjust according to your button text
-    expect(screen.getByText('Pega Page Content')).toBeInTheDocument(); // Replace with actual text
-  });
-
-  // Additional tests can be added here to cover more functionality
-});
+export default AppSelector;
