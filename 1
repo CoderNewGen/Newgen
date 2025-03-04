@@ -1,5 +1,5 @@
 import React from "react";
-import { Navigate, useLocation } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 
 import {
   getSdkConfig,
@@ -8,17 +8,29 @@ import {
   sdkSetAuthHeader
 } from "@pega/auth/lib/sdk-auth-manager";
 
+/**
+ * ProtectedRoute: A wrapper around a route that ensures the user is authenticated before rendering the component.
+ * If the user is not logged in, it triggers authentication and redirects to the appropriate login flow.
+ */
 const ProtectedRoute = ({ component: Component, ...rest }) => {
   const location = useLocation(); // Get the current location
+  const navigate = useNavigate(); // React Router v6 replacement for useHistory()
 
+  /**
+   * Called after a successful login redirect. Ensures the user is navigated to the correct page.
+   */
   const onRedirectDone = () => {
+    navigate(location.pathname, { replace: true }); // Replaces history.replace()
     loginIfNecessary({ appName: "sa", mainRedirect: true });
   };
 
+  // If the user is not logged in, initiate login flow
   if (!sdkIsLoggedIn()) {
     getSdkConfig().then((sdkConfig) => {
       const sdkConfigAuth = sdkConfig.authConfig;
+
       if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "Basic") {
+        // Service package to use custom auth with Basic
         const sB64 = window.btoa(
           `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}`
         );
@@ -27,131 +39,26 @@ const ProtectedRoute = ({ component: Component, ...rest }) => {
 
       if (!sdkConfigAuth.mashupClientId && sdkConfigAuth.customAuthType === "BasicTO") {
         const now = new Date();
-        const expTime = new Date(now.getTime() + 5 * 60 * 1000);
+        const expTime = new Date(now.getTime() + 5 * 60 * 1000); // Token expiration time: 5 minutes
         let sISOTime = `${expTime.toISOString().split(".")[0]}Z`;
         sISOTime = sISOTime.replace(/[-:]/g, "");
+        // Service package to use custom auth with BasicTO
         const sB64 = window.btoa(
           `${sdkConfigAuth.mashupUserIdentifier}:${window.atob(sdkConfigAuth.mashupPassword)}:${sISOTime}`
         );
         sdkSetAuthHeader(`Basic ${sB64}`);
       }
 
+      // Login if needed, ensuring no initial main window redirect
       loginIfNecessary({ appName: "sa", mainRedirect: true, redirectDoneCB: onRedirectDone });
     });
 
+    // Redirect to login page while maintaining the original requested location
     return <Navigate to="/" state={{ from: location }} replace />;
   }
 
+  // Render the protected component if the user is authenticated
   return <Component {...rest} journeyName={rest.journeyName} />;
 };
 
 export default ProtectedRoute;
-
-import React, { useEffect, useState } from "react";
-import { Routes, Route, Navigate } from "react-router-dom";
-import { initReactI18next } from "react-i18next";
-import Backend from "i18next-http-backend";
-import i18n from "i18next";
-import Registration from "../Registration/index";
-import CookiePage from "../Registration/cookiePage/index";
-import Accessibility from "../Registration/AccessibilityPage";
-import AccessibilityCessation from "../Cessation/AccessibilityPage";
-import setPageTitle from "../../components/helpers/setPageTitleHelpers";
-import ProtectedRoute from "../../components/HOC/ProtectedRoute";
-import Cessation from "../Cessation";
-import AppealsAndPenalties from "../AppealsAndPenalties";
-import AppWrapper from "../../components/AppComponents/AppWrapper";
-import AccessibilityAppealsAndPenalties from "../AppealsAndPenalties/AccessibilityPage";
-
-const AppSelector = () => {
-  const [i18nloaded, seti18nloaded] = useState(false);
-
-  useEffect(() => {
-    i18n
-      .use(Backend)
-      .use(initReactI18next)
-      .init({
-        lng: sessionStorage.getItem("rsdk_locale")?.substring(0, 2) || "en",
-        backend: {
-          loadPath: `assets/i18n/{{lng}}.json`,
-        },
-        fallbackLng: "en",
-        debug: false,
-        returnNull: false,
-        react: {
-          useSuspense: false,
-        },
-      })
-      .finally(() => {
-        seti18nloaded(true);
-        setPageTitle();
-      });
-  }, []);
-
-  return !i18nloaded ? null : (
-    <Routes>
-      {/* Redirect Root to Registration */}
-      <Route path="/" element={<Navigate to="/registration" replace />} />
-
-      {/* Private Routes */}
-      <Route path="/registration" element={<ProtectedRoute component={Registration} journeyName="registration" />} />
-      <Route path="/cessation" element={<ProtectedRoute component={Cessation} journeyName="cessation" />} />
-      <Route
-        path="/appeal-a-self-assessment-penalty"
-        element={<ProtectedRoute component={AppealsAndPenalties} journeyName="appeal-a-self-assessment-penalty" />}
-      />
-
-      {/* Public Routes */}
-      <Route
-        path="/registration-cookies"
-        element={
-          <AppWrapper baseurl="registration">
-            <CookiePage />
-          </AppWrapper>
-        }
-      />
-      <Route
-        path="/registration-accessibility"
-        element={
-          <AppWrapper baseurl="registration">
-            <Accessibility />
-          </AppWrapper>
-        }
-      />
-      <Route
-        path="/cessation-cookies"
-        element={
-          <AppWrapper baseurl="cessation">
-            <CookiePage />
-          </AppWrapper>
-        }
-      />
-      <Route
-        path="/cessation-accessibility"
-        element={
-          <AppWrapper baseurl="cessation">
-            <AccessibilityCessation />
-          </AppWrapper>
-        }
-      />
-      <Route
-        path="/appeal-a-self-assessment-penalty-cookies"
-        element={
-          <AppWrapper baseurl="appeal-a-self-assessment-penalty">
-            <CookiePage />
-          </AppWrapper>
-        }
-      />
-      <Route
-        path="/appeal-a-self-assessment-penalty-accessibility"
-        element={
-          <AppWrapper baseurl="appeal-a-self-assessment-penalty">
-            <AccessibilityAppealsAndPenalties />
-          </AppWrapper>
-        }
-      />
-    </Routes>
-  );
-};
-
-export default AppSelector;
