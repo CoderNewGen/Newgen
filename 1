@@ -1,173 +1,119 @@
-import React from "react";
-import { render, screen } from "@testing-library/react";
-import { MemoryRouter } from "react-router-dom";
-import ProtectedRoute from "./ProtectedRoute";
-
-// Mock React Router hooks
-jest.mock("react-router-dom", () => ({
-  ...jest.requireActual("react-router-dom"),
-  useNavigate: jest.fn(),
-  useLocation: jest.fn(() => ({ pathname: "/protected" })),
-}));
-
-// Mock authentication functions
-jest.mock("@pega/auth/lib/sdk-auth-manager", () => ({
-  getSdkConfig: jest.fn(() => Promise.resolve({ authConfig: {} })),
-  loginIfNecessary: jest.fn(),
-  sdkIsLoggedIn: jest.fn(),
-  sdkSetAuthHeader: jest.fn(),
-}));
-
-import { sdkIsLoggedIn, loginIfNecessary } from "@pega/auth/lib/sdk-auth-manager";
-
-const MockComponent = () => <div>Protected Content</div>;
-
-describe("ProtectedRoute Component", () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  test("Redirects to login if user is not authenticated", async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    expect(loginIfNecessary).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText("Protected Content")).not.toBeInTheDocument();
-  });
-
-  test("Renders component if user is authenticated", () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(true);
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText("Protected Content")).toBeInTheDocument();
-    expect(loginIfNecessary).not.toHaveBeenCalled();
-  });
-});
-
-
-import React from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router-dom";
-import AppSelector from "./AppSelector";
-import i18n from "i18next";
-import { initReactI18next } from "react-i18next";
-import Backend from "i18next-http-backend";
+import React from 'react';
+import { render, screen, waitFor } from '@testing-library/react';
+import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import AppSelector from './AppSelector';
+import Registration from '../Registration/index';
+import CookiePage from '../Registration/cookiePage/index';
+import Accessibility from '../Registration/AccessibilityPage';
+import AccessibilityCessation from '../Cessation/AccessibilityPage';
+import Cessation from '../Cessation';
+import AppealsAndPenalties from '../AppealsAndPenalties';
+import AccessibilityAppealsAndPenalties from '../AppealsAndPenalties/AccessibilityPage';
+import ProtectedRoute from '../../components/HOC/ProtectedRoute';
+import AppWrapper from '../../components/AppComponents/AppWrapper';
 
 // Mock i18n initialization
-jest.mock("i18next", () => ({
-  ...jest.requireActual("i18next"),
-  use: jest.fn().mockReturnThis(),
-  init: jest.fn().mockResolvedValue(undefined),
+jest.mock('i18next', () => ({
+  use: jest.fn(),
+  init: jest.fn(() => Promise.resolve()),
 }));
 
-jest.mock("i18next-http-backend", () => ({
-  __esModule: true,
-  default: jest.fn(),
-}));
+// Mock components
+jest.mock('../Registration/index', () => () => <div>Registration Component</div>);
+jest.mock('../Registration/cookiePage/index', () => () => <div>CookiePage Component</div>);
+jest.mock('../Registration/AccessibilityPage', () => () => <div>Accessibility Component</div>);
+jest.mock('../Cessation/AccessibilityPage', () => () => <div>AccessibilityCessation Component</div>);
+jest.mock('../Cessation', () => () => <div>Cessation Component</div>);
+jest.mock('../AppealsAndPenalties', () => () => <div>AppealsAndPenalties Component</div>);
+jest.mock('../AppealsAndPenalties/AccessibilityPage', () => () => <div>AccessibilityAppealsAndPenalties Component</div>);
+jest.mock('../../components/HOC/ProtectedRoute', () => ({ component: Component }) => <div>ProtectedRoute: <Component /></div>);
+jest.mock('../../components/AppComponents/AppWrapper', () => ({ children }) => <div>AppWrapper: {children}</div>);
 
-jest.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
-  initReactI18next: { type: "3rdParty", init: jest.fn() },
-}));
-
-// Mock ProtectedRoute component to avoid full authentication setup
-jest.mock("../../components/HOC/ProtectedRoute", () => ({
-  __esModule: true,
-  default: ({ component: Component }: { component: React.FC }) => <Component />,
-}));
-
-// Mock Components for routes
-jest.mock("../Registration/index", () => () => <div>Registration Page</div>);
-jest.mock("../Cessation", () => () => <div>Cessation Page</div>);
-jest.mock("../AppealsAndPenalties", () => () => <div>Appeals and Penalties Page</div>);
-jest.mock("../Registration/cookiePage/index", () => () => <div>Cookie Page</div>);
-jest.mock("../Registration/AccessibilityPage", () => () => <div>Registration Accessibility Page</div>);
-jest.mock("../Cessation/AccessibilityPage", () => () => <div>Cessation Accessibility Page</div>);
-jest.mock("../AppealsAndPenalties/AccessibilityPage", () => () => <div>Appeals Accessibility Page</div>);
-
-// Mock Page Title Helper
-jest.mock("../../components/helpers/setPageTitleHelpers", () => jest.fn());
-
-describe("AppSelector Component", () => {
+describe('AppSelector Component', () => {
   beforeEach(() => {
+    // Clear sessionStorage and reset mocks
+    sessionStorage.clear();
     jest.clearAllMocks();
   });
 
-  test("Initializes i18n correctly", async () => {
+  test('renders nothing until i18n is loaded', async () => {
     render(
       <MemoryRouter>
         <AppSelector />
       </MemoryRouter>
     );
 
+    // Initially, nothing should be rendered
+    expect(screen.queryByText('Registration Component')).toBeNull();
+    expect(screen.queryByText('CookiePage Component')).toBeNull();
+
+    // Wait for i18n to load
     await waitFor(() => {
-      expect(i18n.init).toHaveBeenCalled();
+      expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
   });
 
-  test("Redirects '/' to '/registration'", async () => {
+  test('redirects to /registration by default', async () => {
     render(
-      <MemoryRouter initialEntries={["/"]}>
-        <Routes>
-          <Route path="*" element={<AppSelector />} />
-        </Routes>
+      <MemoryRouter initialEntries={['/']}>
+        <AppSelector />
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Registration Page")).toBeInTheDocument();
+      expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
   });
 
-  test("Renders protected routes correctly", async () => {
+  test('renders protected routes with ProtectedRoute wrapper', async () => {
     render(
-      <MemoryRouter initialEntries={["/cessation"]}>
-        <Routes>
-          <Route path="*" element={<AppSelector />} />
-        </Routes>
+      <MemoryRouter initialEntries={['/registration']}>
+        <AppSelector />
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Cessation Page")).toBeInTheDocument();
+      expect(screen.getByText('ProtectedRoute:')).toBeInTheDocument();
+      expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
   });
 
-  test("Renders public routes correctly", async () => {
+  test('renders public routes with AppWrapper', async () => {
     render(
-      <MemoryRouter initialEntries={["/registration-cookies"]}>
-        <Routes>
-          <Route path="*" element={<AppSelector />} />
-        </Routes>
+      <MemoryRouter initialEntries={['/registration-cookies']}>
+        <AppSelector />
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Cookie Page")).toBeInTheDocument();
+      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
+      expect(screen.getByText('CookiePage Component')).toBeInTheDocument();
     });
   });
 
-  test("Renders accessibility pages correctly", async () => {
+  test('renders cessation accessibility route', async () => {
     render(
-      <MemoryRouter initialEntries={["/registration-accessibility"]}>
-        <Routes>
-          <Route path="*" element={<AppSelector />} />
-        </Routes>
+      <MemoryRouter initialEntries={['/cessation-accessibility']}>
+        <AppSelector />
       </MemoryRouter>
     );
 
     await waitFor(() => {
-      expect(screen.getByText("Registration Accessibility Page")).toBeInTheDocument();
+      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
+      expect(screen.getByText('AccessibilityCessation Component')).toBeInTheDocument();
+    });
+  });
+
+  test('renders appeals and penalties accessibility route', async () => {
+    render(
+      <MemoryRouter initialEntries={['/appeal-a-self-assessment-penalty-accessibility']}>
+        <AppSelector />
+      </MemoryRouter>
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
+      expect(screen.getByText('AccessibilityAppealsAndPenalties Component')).toBeInTheDocument();
     });
   });
 });
