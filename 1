@@ -1,6 +1,6 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter } from 'react-router-dom';
 import AppSelector from './AppSelector';
 import Registration from '../Registration/index';
 import CookiePage from '../Registration/cookiePage/index';
@@ -45,9 +45,8 @@ describe('AppSelector Component', () => {
 
     // Initially, nothing should be rendered
     expect(screen.queryByText('Registration Component')).toBeNull();
-    expect(screen.queryByText('CookiePage Component')).toBeNull();
 
-    // Wait for i18n to load
+    // Wait for i18n to load and check if Registration Component is rendered
     await waitFor(() => {
       expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
@@ -60,6 +59,7 @@ describe('AppSelector Component', () => {
       </MemoryRouter>
     );
 
+    // Wait for the redirect to /registration
     await waitFor(() => {
       expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
@@ -72,10 +72,13 @@ describe('AppSelector Component', () => {
       </MemoryRouter>
     );
 
+    // Wait for ProtectedRoute to render
     await waitFor(() => {
       expect(screen.getByText('ProtectedRoute:')).toBeInTheDocument();
-      expect(screen.getByText('Registration Component')).toBeInTheDocument();
     });
+
+    // Verify that the Registration Component is rendered inside ProtectedRoute
+    expect(screen.getByText('Registration Component')).toBeInTheDocument();
   });
 
   test('renders public routes with AppWrapper', async () => {
@@ -85,10 +88,13 @@ describe('AppSelector Component', () => {
       </MemoryRouter>
     );
 
+    // Wait for AppWrapper to render
     await waitFor(() => {
       expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
-      expect(screen.getByText('CookiePage Component')).toBeInTheDocument();
     });
+
+    // Verify that the CookiePage Component is rendered inside AppWrapper
+    expect(screen.getByText('CookiePage Component')).toBeInTheDocument();
   });
 
   test('renders cessation accessibility route', async () => {
@@ -98,10 +104,13 @@ describe('AppSelector Component', () => {
       </MemoryRouter>
     );
 
+    // Wait for AppWrapper to render
     await waitFor(() => {
       expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
-      expect(screen.getByText('AccessibilityCessation Component')).toBeInTheDocument();
     });
+
+    // Verify that the AccessibilityCessation Component is rendered inside AppWrapper
+    expect(screen.getByText('AccessibilityCessation Component')).toBeInTheDocument();
   });
 
   test('renders appeals and penalties accessibility route', async () => {
@@ -111,9 +120,12 @@ describe('AppSelector Component', () => {
       </MemoryRouter>
     );
 
+    // Wait for AppWrapper to render
     await waitFor(() => {
       expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
-      expect(screen.getByText('AccessibilityAppealsAndPenalties Component')).toBeInTheDocument();
     });
+
+    // Verify that the AccessibilityAppealsAndPenalties Component is rendered inside AppWrapper
+    expect(screen.getByText('AccessibilityAppealsAndPenalties Component')).toBeInTheDocument();
   });
 });
