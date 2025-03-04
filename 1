@@ -1,123 +1,143 @@
 import React from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import AppSelector from './AppSelector';
-import i18n from 'i18next';
+import ProtectedRoute from './ProtectedRoute';
+import { sdkIsLoggedIn, loginIfNecessary, getSdkConfig, sdkSetAuthHeader } from '@pega/auth/lib/sdk-auth-manager';
 
-// Mock components
-jest.mock('../Registration/index', () => () => <div>Registration Component</div>);
-jest.mock('../Registration/cookiePage/index', () => () => <div>CookiePage Component</div>);
-jest.mock('../Registration/AccessibilityPage', () => () => <div>Accessibility Component</div>);
-jest.mock('../Cessation/AccessibilityPage', () => () => <div>AccessibilityCessation Component</div>);
-jest.mock('../Cessation', () => () => <div>Cessation Component</div>);
-jest.mock('../AppealsAndPenalties', () => () => <div>AppealsAndPenalties Component</div>);
-jest.mock('../AppealsAndPenalties/AccessibilityPage', () => () => <div>AccessibilityAppealsAndPenalties Component</div>);
-jest.mock('../../components/HOC/ProtectedRoute', () => ({ component: Component }) => <div>ProtectedRoute: <Component /></div>);
-jest.mock('../../components/AppComponents/AppWrapper', () => ({ children }) => <div>AppWrapper: {children}</div>);
-
-// Mock i18n initialization
-jest.mock('i18next', () => ({
-  use: jest.fn().mockReturnThis(),
-  init: jest.fn(() => Promise.resolve()),
+// Mock React Router hooks
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: jest.fn(() => jest.fn()),
+  useLocation: jest.fn(() => ({ pathname: '/cessation' })),
 }));
 
-describe('AppSelector Component', () => {
-  beforeEach(() => {
-    // Clear sessionStorage and reset mocks
-    sessionStorage.clear();
+// Mock component to render inside ProtectedRoute
+const MockComponent = () => <div>Private pages</div>;
+
+// Mock authentication functions
+jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
+  getSdkConfig: jest.fn(),
+  loginIfNecessary: jest.fn(),
+  sdkIsLoggedIn: jest.fn(),
+  sdkSetAuthHeader: jest.fn(),
+}));
+
+describe('ProtectedRoute Component', () => {
+  afterEach(() => {
     jest.clearAllMocks();
   });
 
-  test('renders nothing until i18n is loaded', async () => {
+  test('Redirects to login if user is not authenticated', async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
+    (getSdkConfig as jest.Mock).mockResolvedValue({ authConfig: {} });
+
     render(
       <MemoryRouter>
-        <AppSelector />
+        <ProtectedRoute component={MockComponent} />
       </MemoryRouter>
     );
 
-    // Initially, nothing should be rendered
-    expect(screen.queryByText('Registration Component')).toBeNull();
-
-    // Wait for i18n to load and check if Registration Component is rendered
     await waitFor(() => {
-      expect(screen.getByText('Registration Component')).toBeInTheDocument();
+      expect(loginIfNecessary).toHaveBeenCalledTimes(1);
     });
   });
 
-  test('redirects to /registration by default', async () => {
+  test('Renders component if user is authenticated', () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(true);
+
     render(
-      <MemoryRouter initialEntries={['/']}>
-        <AppSelector />
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
       </MemoryRouter>
     );
 
-    // Wait for the redirect to /registration
+    expect(screen.getByText('Private pages')).toBeInTheDocument();
+    expect(loginIfNecessary).not.toHaveBeenCalled();
+  });
+
+  test('Handles Basic authentication type', async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
+    (getSdkConfig as jest.Mock).mockResolvedValue({
+      authConfig: {
+        mashupClientId: null,
+        customAuthType: 'Basic',
+        mashupUserIdentifier: 'user',
+        mashupPassword: window.btoa('password'),
+      },
+    });
+
+    render(
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
+      </MemoryRouter>
+    );
+
     await waitFor(() => {
-      expect(screen.getByText('Registration Component')).toBeInTheDocument();
+      expect(sdkSetAuthHeader).toHaveBeenCalledWith(expect.stringContaining('Basic'));
     });
   });
 
-  test('renders protected routes with ProtectedRoute wrapper', async () => {
+  test('Handles BasicTO authentication type', async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
+    (getSdkConfig as jest.Mock).mockResolvedValue({
+      authConfig: {
+        mashupClientId: null,
+        customAuthType: 'BasicTO',
+        mashupUserIdentifier: 'user',
+        mashupPassword: window.btoa('password'),
+      },
+    });
+
     render(
-      <MemoryRouter initialEntries={['/registration']}>
-        <AppSelector />
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
       </MemoryRouter>
     );
 
-    // Wait for ProtectedRoute to render
     await waitFor(() => {
-      expect(screen.getByText('ProtectedRoute:')).toBeInTheDocument();
+      expect(sdkSetAuthHeader).toHaveBeenCalledWith(expect.stringContaining('Basic'));
     });
-
-    // Verify that the Registration Component is rendered inside ProtectedRoute
-    expect(screen.getByText('Registration Component')).toBeInTheDocument();
   });
 
-  test('renders public routes with AppWrapper', async () => {
+  test('Handles error in getSdkConfig', async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
+    (getSdkConfig as jest.Mock).mockRejectedValue(new Error('Failed to fetch SDK config'));
+
     render(
-      <MemoryRouter initialEntries={['/registration-cookies']}>
-        <AppSelector />
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
       </MemoryRouter>
     );
 
-    // Wait for AppWrapper to render
     await waitFor(() => {
-      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
+      expect(loginIfNecessary).toHaveBeenCalledTimes(1);
     });
-
-    // Verify that the CookiePage Component is rendered inside AppWrapper
-    expect(screen.getByText('CookiePage Component')).toBeInTheDocument();
   });
 
-  test('renders cessation accessibility route', async () => {
+  test('Calls onRedirectDone after login', async () => {
+    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
+    (getSdkConfig as jest.Mock).mockResolvedValue({ authConfig: {} });
+    const mockNavigate = jest.fn();
+    (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
+
     render(
-      <MemoryRouter initialEntries={['/cessation-accessibility']}>
-        <AppSelector />
+      <MemoryRouter>
+        <ProtectedRoute component={MockComponent} />
       </MemoryRouter>
     );
 
-    // Wait for AppWrapper to render
     await waitFor(() => {
-      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
+      expect(loginIfNecessary).toHaveBeenCalledWith({
+        appName: 'sa',
+        mainRedirect: true,
+        redirectDoneCB: expect.any(Function),
+      });
     });
 
-    // Verify that the AccessibilityCessation Component is rendered inside AppWrapper
-    expect(screen.getByText('AccessibilityCessation Component')).toBeInTheDocument();
-  });
+    // Simulate the redirectDoneCB being called
+    const redirectDoneCB = (loginIfNecessary as jest.Mock).mock.calls[0][0].redirectDoneCB;
+    redirectDoneCB();
 
-  test('renders appeals and penalties accessibility route', async () => {
-    render(
-      <MemoryRouter initialEntries={['/appeal-a-self-assessment-penalty-accessibility']}>
-        <AppSelector />
-      </MemoryRouter>
-    );
-
-    // Wait for AppWrapper to render
-    await waitFor(() => {
-      expect(screen.getByText('AppWrapper:')).toBeInTheDocument();
-    });
-
-    // Verify that the AccessibilityAppealsAndPenalties Component is rendered inside AppWrapper
-    expect(screen.getByText('AccessibilityAppealsAndPenalties Component')).toBeInTheDocument();
+    expect(mockNavigate).toHaveBeenCalledWith('/cessation', { replace: true });
   });
 });
