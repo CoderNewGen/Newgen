@@ -1,0 +1,25 @@
+function getUniqueInputFields(form) {
+    const uniqueInputs = [];
+    const radioMap = new Map(); // To store the first radio button for each name
+
+    Array.from(form.elements).forEach(element => {
+        if (element.tagName === "INPUT" && element.name) {
+            if (element.type === "radio") {
+                // Store only the first occurrence of each radio group
+                if (!radioMap.has(element.name)) {
+                    radioMap.set(element.name, element);
+                    uniqueInputs.push(element);
+                }
+            } else {
+                uniqueInputs.push(element);
+            }
+        }
+    });
+
+    return uniqueInputs;
+}
+
+// Example usage:
+const form = document.querySelector("form"); // Select the form
+const uniqueFields = getUniqueInputFields(form);
+console.log(uniqueFields); // Logs the required unique input elements
