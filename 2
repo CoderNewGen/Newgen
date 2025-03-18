@@ -1,0 +1,47 @@
+else {
+  const formFields = PCore.getContextTreeManager().getFieldsList(context);
+
+  for (const [key, value] of formFields) {
+    const { propertyName, pageReference, componentName: type, label, index: displayOrder } = value.props;
+
+    const errorMessages = PCore.getMessageManager().getMessages({
+      property: propertyName,
+      pageReference,
+      context,
+      type: 'error'
+    });
+
+    let validateMessage = '';
+    if (errorMessages.length > 0) {
+      validateMessage = errorMessages
+        .map(error => localizedVal(removeRedundantString(error.message), 'Messages'))
+        .join('. ');
+    }
+
+    if (!validateMessage) continue;
+
+    const formattedPropertyName = propertyName.includes('.') ? propertyName.split('.').pop() : null;
+    let fieldId = formattedPropertyName;
+
+    if (type === 'Date') {
+      const DateErrorTargetFieldId = DateErrorTargetFields(validateMessage);
+      fieldId = `${formattedPropertyName}-day`;
+      if (DateErrorTargetFieldId.includes('month')) {
+        fieldId = `${formattedPropertyName}-month`;
+      } else if (DateErrorTargetFieldId.includes('year')) {
+        fieldId = `${formattedPropertyName}-year`;
+      }
+      validateMessage = DateErrorFormatter(validateMessage, label);
+    }
+
+    errorStateProps.push({
+      message: {
+        message: localizedVal(validateMessage),
+        pageReference,
+        fieldId,
+        propertyName
+      },
+      displayOrder
+    });
+  }
+}
