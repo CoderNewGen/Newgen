@@ -1,40 +1,164 @@
-// components/TrackedClick.tsx
-import { useTracking } from '../hooks/useTracking';
+// src/components/hoc/TrackedClick/types.ts
+import { ComponentPropsWithoutRef } from 'react';
+import { LinkProps } from 'react-router-dom';
 
-type TrackedClickProps = {
+export type TrackableElement = 'button' | 'link' | 'external-link' | 'router-link';
+
+export interface TrackingData {
   eventId: string;
-  eventType: 'click' | 'navigation';
-  elementType: 'button' | 'link' | 'external-link';
+  eventType: string;
   metadata?: Record<string, unknown>;
-  onClick?: () => void;
-  children: React.ReactNode;
-} & React.ComponentPropsWithoutRef<'button'> &
-  React.ComponentPropsWithoutRef<'a'>;
-
-export function TrackedClick({ eventId, eventType, elementType, metadata, onClick, children, ...props }: TrackedClickProps) {
-  const { trackEvent } = useTracking();
-
-  const handleClick = async () => {
-    await trackEvent({ eventId, eventType, elementType, metadata });
-    onClick?.();
-  };
-
-  const Element = elementType === 'link' ? 'a' : 'button';
-
-  return (
-    <Element onClick={handleClick} {...props}>
-      {children}
-    </Element>
-  );
 }
 
-// Usage:
-<TrackedClick
-  eventId="demo_click"
-  eventType="click"
+export type TrackedClickProps = TrackingData & {
+  elementType: TrackableElement;
+  href?: string;
+  to?: LinkProps['to']; // For React Router
+  openInNewTab?: boolean;
+  children: React.ReactNode;
+  onClick?: () => void;
+} & ComponentPropsWithoutRef<'button'> &
+  ComponentPropsWithoutRef<'a'> &
+  Partial<LinkProps>; // Include React Router Link propsheelll// src/components/hoc/TrackedClick/TrackedClick.tsx
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { useTracking } from '../../../hooks/useTracking';
+import { TrackedClickProps } from './types';
+
+export const TrackedClick = ({
+  eventId,
+  eventType,
+  elementType,
+  metadata,
+  href,
+  to,
+  openInNewTab = false,
+  onClick,
+  children,
+  ...props
+}: TrackedClickProps) => {
+  const { trackEvent } = useTracking();
+
+  const handleClick = async (e: React.MouseEvent) => {
+    // Prevent default for external links
+    if (elementType === 'external-link') {
+      e.preventDefault();
+    }
+
+    await trackEvent({
+      eventId,
+      eventType,
+      elementType,
+      metadata: {
+        ...metadata,
+        destination: getDestination()
+      }
+    });
+
+    onClick?.();
+
+    // Handle external link navigation
+    if (elementType === 'external-link' && href) {
+      navigateExternal();
+    }
+  };
+
+  const getDestination = () => {
+    switch (elementType) {
+      case 'router-link': return typeof to === 'string' ? to : to?.pathname;
+      case 'external-link': return href;
+      case 'link': return href;
+      default: return undefined;
+    }
+  };
+
+  const navigateExternal = () => {
+    if (openInNewTab) {
+      window.open(href, '_blank', 'noopener,noreferrer');
+    } else {
+      window.location.href = href!;
+    }
+  };
+
+  // Determine which element to render
+  switch (elementType) {
+    case 'router-link':
+      return (
+        <Link
+          to={to!}
+          onClick={handleClick}
+          {...props as LinkProps}
+        >
+          {children}
+        </Link>
+      );
+    
+    case 'external-link':
+      return (
+        <a
+          href={href}
+          onClick={handleClick}
+          target={openInNewTab ? '_blank' : '_self'}
+          rel={openInNewTab ? 'noopener noreferrer' : undefined}
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    
+    case 'link':
+      return (
+        <a
+          href={href}
+          onClick={handleClick}
+          {...props}
+        >
+          {children}
+        </a>
+      );
+    
+    case 'button':
+    default:
+      return (
+        <button
+          type={props.type || 'button'}
+          onClick={handleClick}
+          {...props}
+        >
+          {children}
+        </button>
+      );
+  }
+};heelll<TrackedClick
   elementType="button"
-  metadata={{ page: 'home' }}
-  onClick={handleDemo}
+  eventId="submit_button"
+  eventType="form_submission"
+  onClick={() => console.log('Submitted')}
+  metadata={{ form: "contact" }}
 >
-  Try Demo
+  Submit Form
+</TrackedClick>heelll<TrackedClick
+  elementType="external-link"
+  eventId="docs_link"
+  eventType="external_navigation"
+  href="https://example.com/docs"
+  openInNewTab
+  metadata={{ section: "getting-started" }}
+>
+  View Documentation
+</TrackedClick>heelll<TrackedClick
+  elementType="router-link"
+  eventId="dashboard_nav"
+  eventType="internal_navigation"
+  to="/dashboard"
+  metadata={{ source: "sidebar" }}
+>
+  Go to Dashboard
+</TrackedClick>heelll<TrackedClick
+  elementType="link"
+  eventId="about_page"
+  eventType="navigation"
+  href="/about"
+>
+  About Us
 </TrackedClick>
