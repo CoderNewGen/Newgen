@@ -1,47 +1,40 @@
-else {
-  const formFields = PCore.getContextTreeManager().getFieldsList(context);
+// components/TrackedClick.tsx
+import { useTracking } from '../hooks/useTracking';
 
-  for (const [key, value] of formFields) {
-    const { propertyName, pageReference, componentName: type, label, index: displayOrder } = value.props;
+type TrackedClickProps = {
+  eventId: string;
+  eventType: 'click' | 'navigation';
+  elementType: 'button' | 'link' | 'external-link';
+  metadata?: Record<string, unknown>;
+  onClick?: () => void;
+  children: React.ReactNode;
+} & React.ComponentPropsWithoutRef<'button'> &
+  React.ComponentPropsWithoutRef<'a'>;
 
-    const errorMessages = PCore.getMessageManager().getMessages({
-      property: propertyName,
-      pageReference,
-      context,
-      type: 'error'
-    });
+export function TrackedClick({ eventId, eventType, elementType, metadata, onClick, children, ...props }: TrackedClickProps) {
+  const { trackEvent } = useTracking();
 
-    let validateMessage = '';
-    if (errorMessages.length > 0) {
-      validateMessage = errorMessages
-        .map(error => localizedVal(removeRedundantString(error.message), 'Messages'))
-        .join('. ');
-    }
+  const handleClick = async () => {
+    await trackEvent({ eventId, eventType, elementType, metadata });
+    onClick?.();
+  };
 
-    if (!validateMessage) continue;
+  const Element = elementType === 'link' ? 'a' : 'button';
 
-    const formattedPropertyName = propertyName.includes('.') ? propertyName.split('.').pop() : null;
-    let fieldId = formattedPropertyName;
-
-    if (type === 'Date') {
-      const DateErrorTargetFieldId = DateErrorTargetFields(validateMessage);
-      fieldId = `${formattedPropertyName}-day`;
-      if (DateErrorTargetFieldId.includes('month')) {
-        fieldId = `${formattedPropertyName}-month`;
-      } else if (DateErrorTargetFieldId.includes('year')) {
-        fieldId = `${formattedPropertyName}-year`;
-      }
-      validateMessage = DateErrorFormatter(validateMessage, label);
-    }
-
-    errorStateProps.push({
-      message: {
-        message: localizedVal(validateMessage),
-        pageReference,
-        fieldId,
-        propertyName
-      },
-      displayOrder
-    });
-  }
+  return (
+    <Element onClick={handleClick} {...props}>
+      {children}
+    </Element>
+  );
 }
+
+// Usage:
+<TrackedClick
+  eventId="demo_click"
+  eventType="click"
+  elementType="button"
+  metadata={{ page: 'home' }}
+  onClick={handleDemo}
+>
+  Try Demo
+</TrackedClick>
