@@ -1,143 +1,90 @@
-import React from 'react';
-import { render, screen, waitFor } from '@testing-library/react';
-import { MemoryRouter } from 'react-router-dom';
-import ProtectedRoute from './ProtectedRoute';
-import { sdkIsLoggedIn, loginIfNecessary, getSdkConfig, sdkSetAuthHeader } from '@pega/auth/lib/sdk-auth-manager';
+// hooks/useTracking.ts
+import { useCallback } from 'react';
 
-// Mock React Router hooks
-jest.mock('react-router-dom', () => ({
-  ...jest.requireActual('react-router-dom'),
-  useNavigate: jest.fn(() => jest.fn()),
-  useLocation: jest.fn(() => ({ pathname: '/cessation' })),
-}));
+type TrackableEvent = {
+  eventId: string;
+  eventType: 'click' | 'navigation';
+  elementType: 'button' | 'link' | 'external-link';
+  metadata?: Record<string, unknown>;
+};
 
-// Mock component to render inside ProtectedRoute
-const MockComponent = () => <div>Private pages</div>;
-
-// Mock authentication functions
-jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
-  getSdkConfig: jest.fn(),
-  loginIfNecessary: jest.fn(),
-  sdkIsLoggedIn: jest.fn(),
-  sdkSetAuthHeader: jest.fn(),
-}));
-
-describe('ProtectedRoute Component', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  test('Redirects to login if user is not authenticated', async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-    (getSdkConfig as jest.Mock).mockResolvedValue({ authConfig: {} });
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(loginIfNecessary).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  test('Renders component if user is authenticated', () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(true);
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    expect(screen.getByText('Private pages')).toBeInTheDocument();
-    expect(loginIfNecessary).not.toHaveBeenCalled();
-  });
-
-  test('Handles Basic authentication type', async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-    (getSdkConfig as jest.Mock).mockResolvedValue({
-      authConfig: {
-        mashupClientId: null,
-        customAuthType: 'Basic',
-        mashupUserIdentifier: 'user',
-        mashupPassword: window.btoa('password'),
-      },
-    });
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(sdkSetAuthHeader).toHaveBeenCalledWith(expect.stringContaining('Basic'));
-    });
-  });
-
-  test('Handles BasicTO authentication type', async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-    (getSdkConfig as jest.Mock).mockResolvedValue({
-      authConfig: {
-        mashupClientId: null,
-        customAuthType: 'BasicTO',
-        mashupUserIdentifier: 'user',
-        mashupPassword: window.btoa('password'),
-      },
-    });
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(sdkSetAuthHeader).toHaveBeenCalledWith(expect.stringContaining('Basic'));
-    });
-  });
-
-  test('Handles error in getSdkConfig', async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-    (getSdkConfig as jest.Mock).mockRejectedValue(new Error('Failed to fetch SDK config'));
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(loginIfNecessary).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  test('Calls onRedirectDone after login', async () => {
-    (sdkIsLoggedIn as jest.Mock).mockReturnValue(false);
-    (getSdkConfig as jest.Mock).mockResolvedValue({ authConfig: {} });
-    const mockNavigate = jest.fn();
-    (useNavigate as jest.Mock).mockReturnValue(mockNavigate);
-
-    render(
-      <MemoryRouter>
-        <ProtectedRoute component={MockComponent} />
-      </MemoryRouter>
-    );
-
-    await waitFor(() => {
-      expect(loginIfNecessary).toHaveBeenCalledWith({
-        appName: 'sa',
-        mainRedirect: true,
-        redirectDoneCB: expect.any(Function),
+export function useTracking() {
+  const trackEvent = useCallback(async (event: TrackableEvent) => {
+    try {
+      await fetch('/api/analytics', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...event,
+          timestamp: new Date().toISOString(),
+        }),
       });
-    });
+    } catch (error) {
+      console.error('Tracking failed:', error);
+    }
+  }, []);
 
-    // Simulate the redirectDoneCB being called
-    const redirectDoneCB = (loginIfNecessary as jest.Mock).mock.calls[0][0].redirectDoneCB;
-    redirectDoneCB();
+  const createTrackedHandler = useCallback(
+    (event: TrackableEvent, originalHandler?: () => void) => {
+      return async () => {
+        await trackEvent(event);
+        originalHandler?.();
+      };
+    },
+    [trackEvent]
+  );
 
-    expect(mockNavigate).toHaveBeenCalledWith('/cessation', { replace: true });
+  return { trackEvent, createTrackedHandler };
+}
+
+
+button
+function SubmitButton() {
+  const { createTrackedHandler } = useTracking();
+
+  const handleSubmit = () => {
+    console.log('Form submitted');
+  };
+
+  const trackedSubmit = createTrackedHandler(
+    {
+      eventId: 'form_submit',
+      eventType: 'click',
+      elementType: 'button',
+      metadata: { formName: 'contact' },
+    },
+    handleSubmit
+  );
+
+  return <button onClick={trackedSubmit}>Submit</button>;
+}
+internal links
+function NavLink() {
+  const { createTrackedHandler } = useTracking();
+
+  const trackedClick = createTrackedHandler({
+    eventId: 'dashboard_nav',
+    eventType: 'navigation',
+    elementType: 'link',
+    metadata: { source: 'sidebar' },
   });
-});
+
+  return <Link to="/dashboard" onClick={trackedClick}>Dashboard</Link>;
+}
+
+external links
+function ExternalLink() {
+  const { trackEvent } = useTracking();
+
+  const handleClick = async () => {
+    await trackEvent({
+      eventId: 'external_docs',
+      eventType: 'navigation',
+      elementType: 'external-link',
+      metadata: { type: 'documentation' },
+    });
+    window.open('https://example.com', '_blank');
+  };
+
+  return <a onClick={handleClick}>Documentation</a>;
+}
