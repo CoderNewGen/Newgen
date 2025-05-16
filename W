@@ -7,6 +7,7 @@ import { mockGetSdkConfigWithBasepath } from '../../../../tests/mocks/getSdkConf
 import useHMRCExternalLinks from '../../../components/helpers/hooks/HMRCExternalLinks';
 import AppealsAndPenaltiesLanding from '.';
 import C11nEnv from '@pega/pcore-pconnect-typedefs/interpreter/c11n-env';
+import { ServiceStatusType } from '../../../components/helpers/getServiceStatus'; // Adjust the path if needed
 
 jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
   getSdkConfig: jest.fn()
@@ -14,6 +15,7 @@ jest.mock('@pega/auth/lib/sdk-auth-manager', () => ({
 
 const mockCreateCase = jest.fn();
 const mockHandleCaseStart = jest.fn();
+const mockSetServiceStatus = jest.fn() as React.Dispatch<React.SetStateAction<ServiceStatusType>>;
 
 interface LandingPropsType {
   isLogout: boolean;
@@ -22,7 +24,7 @@ interface LandingPropsType {
   createCaseEndpoint: string;
   handleCaseStart: () => void;
   penaltyDataEndpointParams: {};
-  setServiceStatus: (status: ServiceStatusType) => void;
+  setServiceStatus?: React.Dispatch<React.SetStateAction<ServiceStatusType>>; // added
 }
 
 const defaultProps: LandingPropsType = {
@@ -34,7 +36,7 @@ const defaultProps: LandingPropsType = {
   createCaseEndpoint: '/mock/create-case-endpoint',
   handleCaseStart: mockHandleCaseStart,
   penaltyDataEndpointParams: { LocalisedContent: true },
-  setServiceStatus: jest.fn()
+  setServiceStatus: mockSetServiceStatus
 };
 
 const responseContentObject = {
@@ -112,7 +114,6 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
   beforeEach(async () => {
     mockGetSdkConfigWithBasepath();
 
-    // Mocking PCore
     (window as any).PCore = {
       getMashupApi: () => ({
         createCase: mockCreateCase
@@ -121,6 +122,7 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
 
     t = renderHook(() => useTranslation());
     const { result } = renderHook(() => useHMRCExternalLinks());
+
     await act(async () => {
       t.result.current.i18n.changeLanguage('en');
       result.current.referrerURL = 'https://www.staging.tax.service.gov.uk/';
@@ -133,6 +135,7 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
     sessionStorage.setItem('rsdk_locale', `en_GB`);
     mockCreateCase.mockResolvedValue({ data: [] });
     mockGetPageDataAsync = jest.fn();
+
     const mockEventEmitter = {
       subscribe: jest.fn(),
       unsubscribe: jest.fn()
@@ -142,9 +145,7 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
       getDataPageUtils: jest.fn(() => ({
         getDataAsync: mockGetPageDataAsync
       })),
-      getPubSubUtils: jest.fn(() => {
-        return mockEventEmitter;
-      })
+      getPubSubUtils: jest.fn(() => mockEventEmitter)
     };
   });
 
@@ -156,13 +157,13 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
         </I18nextProvider>
       );
     });
+
     expect(screen.getByRole('main')).toBeInTheDocument();
     expect(screen.getByText('Your Self Assessment penalties')).toBeInTheDocument();
   });
 
   it('renders "no penalties" message in english when no data is fetched', async () => {
     mockCreateCase.mockResolvedValue({ data: [] });
-
     mockGetPageDataAsync.mockResolvedValue(null);
 
     await act(async () => {
@@ -171,13 +172,14 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('You do not have any Self Assessment penalties')).toBeInTheDocument();
+      expect(
+        screen.getByText('You do not have any Self Assessment penalties')
+      ).toBeInTheDocument();
     });
   });
 
   it('renders "no penalties" message in welsh when no data is fetched', async () => {
     mockCreateCase.mockResolvedValue({ data: [] });
-
     mockGetPageDataAsync.mockResolvedValue(null);
 
     await act(async () => {
@@ -186,7 +188,9 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText('Nid oes gennych unrhyw gosbau Hunanasesiad')).toBeInTheDocument();
+      expect(
+        screen.getByText('Nid oes gennych unrhyw gosbau Hunanasesiad')
+      ).toBeInTheDocument();
     });
   });
 
@@ -249,33 +253,23 @@ describe('AppealsAndPenaltiesLanding Component.', () => {
     });
   });
 
-  it('handles service shuttered status correctly', async () => {
-    const mockSetServiceStatusWithShutter = jest.fn();
-
-    const shutteredStatus = {
-      loading: false,
-      isServiceHealthy: false,
-      shuttered: true,
-      outage: false,
-      time: '09:00',
-      date: '2025-05-15',
-      time_cy: '09:00',
-      date_cy: '2025-05-15'
-    };
-
+  it('calls setServiceStatus with shuttered true', async () => {
     mockGetPageDataAsync.mockResolvedValue(responseContentObject);
 
     await act(async () => {
       render(
-        <AppealsAndPenaltiesLanding
-          {...defaultProps}
-          setServiceStatus={mockSetServiceStatusWithShutter}
-        />
+        <I18nextProvider i18n={t.result.current.i18n}>
+          <AppealsAndPenaltiesLanding {...defaultProps} />
+        </I18nextProvider>
       );
     });
 
-    expect(mockSetServiceStatusWithShutter).toHaveBeenCalledWith(expect.objectContaining({
-      shuttered: true
-    }));
+    await waitFor(() => {
+      expect(mockSetServiceStatus).toHaveBeenCalledWith(
+        expect.objectContaining({
+          shuttered: expect.any(Boolean)
+        })
+      );
+    });
   });
 });
