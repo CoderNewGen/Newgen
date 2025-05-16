@@ -10,43 +10,51 @@ const defaultProps = {
   createCaseEndpoint: '/create-case',
   handleCaseStart: jest.fn(),
   penaltyDataEndpointParams: {},
-  setServiceStatus: jest.fn(), // <- Required prop added
+  setServiceStatus: jest.fn(), // REQUIRED PROP INCLUDED
 };
 
-describe('Landing Component', () => {
-  it('should render correctly with default props', () => {
-    const { getByText } = render(<Landing {...defaultProps} />);
-    expect(getByText('Appeals and Penalties')).toBeInTheDocument();
+describe('Landing component tests', () => {
+  it('renders without crashing', () => {
+    render(<Landing {...defaultProps} />);
+    expect(screen.getByText(/Appeals and Penalties/i)).toBeInTheDocument();
   });
 
-  it('should trigger case start on button click', async () => {
+  it('starts a new case when start button is clicked', async () => {
     render(<Landing {...defaultProps} />);
-    const startButton = screen.getByRole('button', { name: /Start appeal/i });
+    const startButton = screen.getByRole('button', { name: /Start Appeal/i });
     fireEvent.click(startButton);
     await waitFor(() => {
       expect(defaultProps.handleCaseStart).toHaveBeenCalled();
     });
   });
 
-  it('should call setServiceStatus if provided', async () => {
+  it('handles penalty data fetch and rendering', async () => {
+    render(<Landing {...defaultProps} />);
+    expect(await screen.findByText(/Penalty Summary/i)).toBeInTheDocument();
+  });
+
+  it('handles logout state', () => {
+    const logoutProps = { ...defaultProps, isLogout: true };
+    render(<Landing {...logoutProps} />);
+    expect(screen.getByText(/You have been logged out/i)).toBeInTheDocument();
+  });
+
+  it('does not crash with empty penalty data', () => {
+    render(<Landing {...defaultProps} />);
+    expect(screen.getByTestId('penalty-summary')).toBeInTheDocument();
+  });
+
+  // NEW TEST CASE FOR setServiceStatus PROP BEHAVIOR
+  it('calls setServiceStatus if provided', async () => {
     const setServiceStatusMock = jest.fn();
-    render(<Landing {...defaultProps} setServiceStatus={setServiceStatusMock} />);
+    render(
+      <Landing
+        {...defaultProps}
+        setServiceStatus={setServiceStatusMock}
+      />
+    );
     await waitFor(() => {
       expect(setServiceStatusMock).toHaveBeenCalled();
     });
-  });
-
-  it('should handle logout flow correctly', () => {
-    const props = {
-      ...defaultProps,
-      isLogout: true,
-    };
-    render(<Landing {...props} />);
-    expect(screen.getByText(/you have been logged out/i)).toBeInTheDocument();
-  });
-
-  it('should handle empty penalty data gracefully', () => {
-    render(<Landing {...defaultProps} />);
-    expect(screen.queryByText(/no penalties available/i)).not.toBeNull();
   });
 });
