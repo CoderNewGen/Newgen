@@ -1,43 +1,52 @@
-// src/hooks/useTracking.ts
-import { useCallback } from 'react';
+import React from 'react';
+import { render, fireEvent, waitFor, screen } from '@testing-library/react';
+import Landing from './index';
+import { C11nEnv } from '@pega/react-sdk-components/lib/types';
 
-export interface TrackingEvent {
-  eventId: string;
-  eventType: string;
-  elementType: 'button' | 'link' | 'external-link' | 'router-link';
-  metadata?: Record<string, unknown>;
-}
+const defaultProps = {
+  isLogout: false,
+  pConn: {},
+  penaltyDataEndpoint: '/penalty-data',
+  createCaseEndpoint: '/create-case',
+  handleCaseStart: jest.fn(),
+  penaltyDataEndpointParams: {},
+  setServiceStatus: jest.fn(), // <- Required prop added
+};
 
-export function useTracking() {
-  const trackEvent = useCallback(async (event: TrackingEvent) => {
-    try {
-      // Add any additional tracking data you want to include globally
-      const trackingData = {
-        ...event,
-        timestamp: new Date().toISOString(),
-        url: window.location.pathname,
-        userAgent: navigator.userAgent
-      };
+describe('Landing Component', () => {
+  it('should render correctly with default props', () => {
+    const { getByText } = render(<Landing {...defaultProps} />);
+    expect(getByText('Appeals and Penalties')).toBeInTheDocument();
+  });
 
-      // Send to your analytics API
-      await fetch('/api/analytics', {
-        method: 'POST',
-        headers: { 
-          'Content-Type': 'application/json',
-          // Include auth headers if needed
-        },
-        body: JSON.stringify(trackingData),
-      });
+  it('should trigger case start on button click', async () => {
+    render(<Landing {...defaultProps} />);
+    const startButton = screen.getByRole('button', { name: /Start appeal/i });
+    fireEvent.click(startButton);
+    await waitFor(() => {
+      expect(defaultProps.handleCaseStart).toHaveBeenCalled();
+    });
+  });
 
-      // Optional: Debug logging in development
-      if (process.env.NODE_ENV === 'development') {
-        console.log('Tracked event:', trackingData);
-      }
-    } catch (error) {
-      console.error('Tracking error:', error);
-      // Optional: Implement retry logic or fallback tracking here
-    }
-  }, []);
+  it('should call setServiceStatus if provided', async () => {
+    const setServiceStatusMock = jest.fn();
+    render(<Landing {...defaultProps} setServiceStatus={setServiceStatusMock} />);
+    await waitFor(() => {
+      expect(setServiceStatusMock).toHaveBeenCalled();
+    });
+  });
 
-  return { trackEvent };
-}
+  it('should handle logout flow correctly', () => {
+    const props = {
+      ...defaultProps,
+      isLogout: true,
+    };
+    render(<Landing {...props} />);
+    expect(screen.getByText(/you have been logged out/i)).toBeInTheDocument();
+  });
+
+  it('should handle empty penalty data gracefully', () => {
+    render(<Landing {...defaultProps} />);
+    expect(screen.queryByText(/no penalties available/i)).not.toBeNull();
+  });
+});
