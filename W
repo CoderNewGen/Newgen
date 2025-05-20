@@ -1,180 +1,78 @@
-import React from 'react';
-import { render, act, screen } from '@testing-library/react';
-import AppealsAndPenaltiesLanding from '../AppealsAndPenaltiesLanding';
-import { getServiceStatus } from '../../../components/helpers/getServiceStatus';
+# User Story: Expose Shuttering Functionality in a Common Library
 
-jest.mock('../../../components/helpers/getServiceStatus', () => ({
-  getServiceStatus: jest.fn().mockResolvedValue({
-    loading: false,
-    isServiceHealthy: true,
-    shuttered: false,
-    outage: false,
-    time: undefined,
-    date: undefined,
-    time_cy: undefined,
-    date_cy: undefined
-  })
-}));
+## User Story
+**Title**: Expose Common Shuttering Functionality as a Shared Library
 
-const mockCreateCase = jest.fn();
-const mockSetPenaltyData = jest.fn();
-const mockSetPenaltyContent = jest.fn();
-const mockSetServiceStatus = jest.fn();
+**As a** frontend developer  
+**I want** to use a common shuttering (health check) functionality from a shared library  
+**So that** I can maintain consistency across applications and reduce code duplication  
 
-const mockGetValue = jest.fn((key) => {
-  if (key === 'pxRequestor.pyUserIdentifier') return 'testUser';
-  if (key === 'pyWorkPage.ApplicationType') return 'TEST';
-  return null;
+## Description
+We currently have shuttering (health check API) functionality implemented separately in multiple React applications. This functionality needs to be:
+1. Consolidated into a common library
+2. Available for all applications to consume
+3. Triggered automatically before every API call
+4. Configurable for different endpoints and conditions
+
+The shuttering functionality should prevent API calls when the health check fails, providing a fallback mechanism.
+
+## Acceptance Criteria
+
+1. **Library Integration**:
+   - [ ] The library should be published as an npm package
+   - [ ] Should support React applications (with potential for other frameworks in future)
+   - [ ] Should have TypeScript support and proper type definitions
+
+2. **Pre-API Call Behavior**:
+   - [ ] Shuttering check must automatically run before every API call attempt
+   - [ ] If shuttering check fails, the API call should be prevented
+   - [ ] Should provide a callback/hook for UI to respond to shuttering state
+
+3. **Configuration**:
+   - [ ] Should allow configuration of health check endpoint
+   - [ ] Should allow setting custom intervals for health checks
+   - [ ] Should support multiple health check strategies (immediate, cached, etc.)
+   - [ ] Should allow custom thresholds for failure conditions
+
+4. **Fallback Mechanism**:
+   - [ ] Should provide a way to define fallback behavior when shuttering is active
+   - [ ] Should support different fallback strategies per API endpoint
+   - [ ] Should expose shuttering state to application for UI feedback
+
+5. **Performance**:
+   - [ ] Should not significantly impact application performance
+   - [ ] Should implement caching to avoid excessive health check calls
+   - [ ] Should have minimal bundle size impact
+
+6. **Error Handling**:
+   - [ ] Should properly handle network errors during health checks
+   - [ ] Should provide error logging capabilities
+   - [ ] Should allow custom error handlers
+
+## Technical Notes
+- The shuttering functionality should wrap existing API calls (like Axios/Fetch interceptors)
+- Should work with common React state management solutions (Redux, Context, etc.)
+- Should provide React hooks for easy consumption (e.g., `useShuttering()`)
+- Should include documentation with examples for implementation
+
+## Example Usage
+```javascript
+// Library initialization
+import { initShuttering } from 'common-shuttering';
+
+initShuttering({
+  healthCheckUrl: '/api/health',
+  checkInterval: 30000,
+  onShutteringActive: () => {
+    // Show maintenance mode UI
+  }
 });
 
-const mockGetActionsApi = jest.fn(() => ({
-  createCase: mockCreateCase
-}));
+// In API calls - automatically wrapped
+api.get('/data').then(...).catch(...);
 
-const mockGetConstants = jest.fn(() => ({
-  APP: {
-    PAGE: {
-      LANDING: {
-        PENALTIES: 'penalties-landing'
-      }
-    }
-  }
-}));
+// React component usage
+const { isShutteringActive } = useShuttering();
+```
 
-const mockGetPageDataAsync = jest.fn();
-
-const mockPConnect = jest.fn(() => ({
-  getRawMetadata: jest.fn(() => ({
-    config: {
-      type: 'View',
-      name: 'TestView'
-    }
-  }))
-}));
-
-const defaultProps = {
-  getPConnect: mockPConnect,
-  createCase: mockCreateCase,
-  setPenaltyData: mockSetPenaltyData,
-  setPenaltyContent: mockSetPenaltyContent,
-  setServiceStatus: mockSetServiceStatus
-};
-
-const responseContentObject = {
-  penaltyContent: {
-    title: 'Penalties and Appeals',
-    startAnAppeal: 'Start an appeal'
-  },
-  penaltyContentCy: {
-    title: 'Cosbau am gyflwyno',
-    startAnAppeal: 'Dechrau apêl'
-  }
-};
-
-describe('AppealsAndPenaltiesLanding', () => {
-  beforeEach(() => {
-    jest.clearAllMocks();
-
-    // Mock PCore methods
-    (window as any).PCore = {
-      getStoreValue: mockGetValue,
-      getActionsApi: mockGetActionsApi,
-      getConstants: mockGetConstants,
-      getDataApiUtils: () => ({
-        getDataAsync: mockGetPageDataAsync
-      }),
-      getPubSubUtils: () => ({
-        subscribe: jest.fn(),
-        unsubscribe: jest.fn()
-      })
-    };
-  });
-
-  it('renders component and sets penalty content', async () => {
-    mockGetPageDataAsync.mockResolvedValue(responseContentObject);
-
-    await act(async () => {
-      render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    });
-
-    expect(mockSetPenaltyContent).toHaveBeenCalledWith(responseContentObject);
-    expect(screen.getByText('Penalties and Appeals')).toBeInTheDocument();
-    expect(screen.getByText('Start an appeal')).toBeInTheDocument();
-  });
-
-  it('creates case on start button click and sets service status', async () => {
-    mockGetPageDataAsync.mockResolvedValue(responseContentObject);
-
-    await act(async () => {
-      render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    });
-
-    const button = screen.getByRole('button', { name: /Start an appeal/i });
-
-    await act(async () => {
-      button.click();
-    });
-
-    expect(getServiceStatus).toHaveBeenCalled();
-    expect(mockCreateCase).toHaveBeenCalled();
-  });
-
-  it('calls setServiceStatus when service is unhealthy', async () => {
-    (getServiceStatus as jest.Mock).mockResolvedValueOnce({
-      loading: false,
-      isServiceHealthy: false,
-      shuttered: true,
-      outage: false,
-      time: '10:00',
-      date: '2025-05-15',
-      time_cy: '10:00',
-      date_cy: '2025-05-15'
-    });
-
-    mockGetPageDataAsync.mockResolvedValue(responseContentObject);
-
-    await act(async () => {
-      render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    });
-
-    const button = screen.getByRole('button', { name: /Start an appeal/i });
-
-    await act(async () => {
-      button.click();
-    });
-
-    expect(mockSetServiceStatus).toHaveBeenCalledWith(
-      expect.objectContaining({ isServiceHealthy: false, shuttered: true })
-    );
-  });
-
-  it('subscribes to languageToggleTriggered and updates penalty content', async () => {
-    const mockSubscribe = jest.fn();
-    const mockUnsubscribe = jest.fn();
-
-    (window as any).PCore.getPubSubUtils = () => ({
-      subscribe: mockSubscribe,
-      unsubscribe: mockUnsubscribe
-    });
-
-    mockGetPageDataAsync.mockResolvedValue(responseContentObject);
-
-    await act(async () => {
-      render(<AppealsAndPenaltiesLanding {...defaultProps} />);
-    });
-
-    expect(mockSubscribe).toHaveBeenCalledWith(
-      'languageToggleTriggered',
-      expect.any(Function),
-      'PenaltiesLandingPageLanguageChange'
-    );
-
-    const callback = mockSubscribe.mock.calls[0][1];
-
-    await act(async () => {
-      callback({ language: 'cy' });
-    });
-
-    expect(mockSetPenaltyContent).toHaveBeenCalledWith(responseContentObject);
-  });
-});
+Would you like me to elaborate on any specific part of this user story or provide more technical details about the implementation approach?
