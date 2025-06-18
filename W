@@ -1,3 +1,5 @@
+https://chatgpt.com/share/68527cba-5c8c-8000-a5b7-55abd5afa1f6
+
 # User Story: Expose Shuttering Functionality in a Common Library
 
 ## User Story
