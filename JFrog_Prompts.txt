@@ -1,0 +1,59 @@
+🧠 Prompt for DeepSeek: Consuming React Utility from HMRC Artifactory
+
+I have a React utility module that I’ve published to HMRC’s private JFrog Artifactory at:  
+https://artifacts.alm.gov.hmrc.gov.uk/artifactory/api/npm/npm-virtual/.
+
+Now, I want to consume this module in other internal React projects.
+
+✅ The module is published as an npm package, for example: @hmrc/my-utils.
+
+🔐 Artifactory requires authentication using an API token.
+
+I need help automating this in:
+
+1. Local development setup (optional .npmrc or npm config setup)
+2. CI/CD pipelines (GitLab preferred, no .npmrc in repo)
+3. Example of how to use the module in a React app
+
+Please include:
+- Proper npm install commands using the private registry
+- Secure handling of credentials (e.g., NODE_AUTH_TOKEN or npm config set)
+- Minimal usage example of the utility in a React component
+- Best practices for consuming private npm packages in enterprise environments
+
+🔗 Reference registry: https://artifacts.alm.gov.hmrc.gov.uk/artifactory/api/npm/npm-virtual/
+
+
+🧠 Prompt for DeepSeek: Publishing React/Node Module to JFrog Artifactory
+
+I have a React-based utility module that I want to publish as a private npm package to JFrog Artifactory, specifically hosted at:
+
+https://artifacts.alm.gov.hmrc.gov.uk/artifactory/api/npm/npm-local/
+
+This package is bundled using Webpack (v5.1.4) and includes typical React/JS code.
+
+✅ I need a complete setup and deployment strategy that includes:
+
+1. Webpack build config
+   - Output should be UMD module
+   - Support for externalizing React
+   - clean: true and globalObject: "this" explanation
+
+2. Authentication for npm publish
+   - Option A: .npmrc usage (for local dev only, not committed)
+   - Option B: npm config set approach (for GitLab CI)
+   - Option C: NODE_AUTH_TOKEN for scoped packages (if applicable)
+
+3. GitLab CI pipeline
+   - Sample .gitlab-ci.yml to build and publish package
+   - Secure handling of Artifactory API key ($ARTIFACTORY_API_KEY)
+   - Publish only on main or release branches
+
+4. Best practices
+   - No .npmrc in repo
+   - Dynamic auth in CI/CD
+   - Version tagging & changelog optional
+
+✅ Optional:
+- Reference any official JFrog docs for npm publish
+- HMRC-specific conventions (if known)
