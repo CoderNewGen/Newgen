@@ -1,0 +1,364 @@
+**1 — memoize, zero shape change.**
+Wrap the object you already pass to <Outlet context={{...}}> in useMemo. No field is added, removed, or renamed; every consumer of useOutletContext<IabdOutletContext>() gets the identical shape. This is a 5-line diff, purely a correctness/perf fix, and the easiest possible PR to review and trust.
+
+const outletContextValue = useMemo(() => ({
+  employmentTaxData, setEmploymentTaxData, dynamicIABDVals, /* ...all current fields... */
+}), [employmentTaxData, dynamicIABDVals, /* ...matching deps... */]);
+
+<Outlet context={outletContextValue} />
+
+
+**IABD index.tsx**
+const journeyActions = useIabdJourneyActions({ goTo, location, setShowTimeoutModal, /* ... */ });
+const journeyData = useBuildIabdJourneyData({ employmentTaxData, setEmploymentTaxData, /* ... */ });
+
+const outletContextValue = useMemo(
+  () => ({ ...journeyData, ...journeyActions }),
+  [journeyData, journeyActions]
+);
+
+<Outlet context={outletContextValue} />
+
+**useIabdJourneyData.tsx **
+import { createContext, useContext, useMemo, ReactNode, Dispatch, SetStateAction } from 'react';
+import { EmploymentTaxData } from '../routing/routeTypes';
+
+export interface IabdJourneyData {
+  employmentTaxData: EmploymentTaxData | null;
+  setEmploymentTaxData: Dispatch<SetStateAction<EmploymentTaxData | null>>;
+  dynamicIABDVals: any;
+  dynamicDisabledIABDDetails: boolean;
+  annualCodingData: any;
+  setAnnualCodingData: Dispatch<SetStateAction<any>>;
+  taxYearStartDate: string;
+  setTaxYearStartDate: Dispatch<SetStateAction<string>>;
+  navClickHandler: any;
+  customerDetails: any;
+  setCustomerDetails: Dispatch<SetStateAction<any>>;
+  accessGroup: string;
+  setAccessGroup: Dispatch<SetStateAction<string>>;
+  caseId: string;
+  showResolutionPage: boolean;
+}
+
+const IabdJourneyDataContext = createContext<IabdJourneyData | null>(null);
+
+export function IabdJourneyDataProvider({ value, children }: { value: IabdJourneyData; children: ReactNode }) {
+  return <IabdJourneyDataContext.Provider value={value}>{children}</IabdJourneyDataContext.Provider>;
+}
+
+export function useIabdJourneyData(): IabdJourneyData {
+  const ctx = useContext(IabdJourneyDataContext);
+  if (!ctx) {
+    throw new Error('useIabdJourneyData must be used within IabdJourneyDataProvider (inside the Iabd shell)');
+  }
+  return ctx;
+}
+
+// Called from IabdShell.tsx with the raw state values — returns a stable object
+// that only changes identity when one of the actual data values changes.
+export function useBuildIabdJourneyData(data: IabdJourneyData): IabdJourneyData {
+  return useMemo(
+    () => data,
+    [
+      data.employmentTaxData,
+      data.dynamicIABDVals,
+      data.dynamicDisabledIABDDetails,
+      data.annualCodingData,
+      data.taxYearStartDate,
+      data.navClickHandler,
+      data.customerDetails,
+      data.accessGroup,
+      data.caseId,
+      data.showResolutionPage
+      // setters deliberately excluded — useState setters are referentially
+      // stable across renders, so including them would add noise, not correctness
+    ]
+  );
+}
+
+**useIabdJourneyActions.ts**
+import { useCallback, useMemo, MouseEvent } from 'react';
+import type { Location } from 'react-router-dom';
+import type { Dispatch, SetStateAction } from 'react';
+import PAYE_ROUTES from '../../../AppSelector/payeRoutes';
+import { staySignedIn } from '../../../../components/AppComponents/TimeoutPopup/timeOutUtils';
+import { appendLangParam, getServiceShutteredStatus } from '../../../../components/helpers/utils';
+import { DetailsTypes } from '../PayeCurrentYear/PayeCurrentYearTypes';
+import { TimeLineEvent } from '../../../../reuseables/Types/TimeLineEvents';
+
+declare const PCore: any;
+
+type GoTo = (path: string, state?: Record<string, unknown>, options?: { replace?: boolean }) => void;
+
+export interface IabdJourneyActionsDeps {
+  goTo: GoTo;
+  location: Location;
+  setShowTimeoutModal: Dispatch<SetStateAction<boolean>>;
+  setNavClickHandler: Dispatch<SetStateAction<any>>;
+  setShowResolutionPage: Dispatch<SetStateAction<boolean>>;
+  setShowPega: Dispatch<SetStateAction<boolean>>;
+  setIsLoading: Dispatch<SetStateAction<boolean>>;
+  setServiceIsShuttered: Dispatch<SetStateAction<boolean>>;
+}
+
+export function useIabdJourneyActions({
+  goTo,
+  location,
+  setShowTimeoutModal,
+  setNavClickHandler,
+  setShowResolutionPage,
+  setShowPega,
+  setIsLoading,
+  setServiceIsShuttered
+}: IabdJourneyActionsDeps) {
+  const startNow = useCallback(
+    async (e: MouseEvent<HTMLAnchorElement, MouseEvent>, caseType: string, startPageUrl: string) => {
+      e.preventDefault();
+      goTo(startPageUrl, { caseType });
+    },
+    [goTo]
+  );
+
+  const showPegaView = useCallback(async () => {
+    setShowPega(true);
+  }, [setShowPega]);
+
+  const resetAppDisplay = useCallback(() => {
+    setShowPega(false);
+  }, [setShowPega]);
+
+  const getShutteredService = useCallback(async () => {
+    setIsLoading(true);
+    const status: boolean = await getServiceShutteredStatus();
+    setServiceIsShuttered(status);
+    setIsLoading(false);
+    return status;
+  }, [setIsLoading, setServiceIsShuttered]);
+
+  const beginClaim = useCallback(() => {
+    goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.ADD_EMPLOYMENT);
+  }, [goTo]);
+
+  const beginIntrruptionPage = useCallback(
+    (
+      TheEmploymentSequenceNumber: number,
+      handleNavClick: (e: MouseEvent<HTMLAnchorElement, MouseEvent>, path: string) => void,
+      fromPage: string
+    ) => {
+      staySignedIn(setShowTimeoutModal, true);
+      setNavClickHandler(() => handleNavClick);
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.INTERRUPTION, {
+        employmentSequenceNumber: TheEmploymentSequenceNumber,
+        previousPage: fromPage
+      });
+    },
+    [goTo, setShowTimeoutModal, setNavClickHandler]
+  );
+
+  const beginUpdateEstimatedTaxableIncomePage = useCallback(
+    (
+      details: DetailsTypes,
+      handleNavClick: (e: MouseEvent<HTMLAnchorElement, MouseEvent>, path: string) => void,
+      tesUrl: string
+    ) => {
+      staySignedIn(setShowTimeoutModal, true);
+      setNavClickHandler(() => handleNavClick);
+      goTo(`${location.pathname}/update-estimated-taxable-income`, {
+        employerName: details.EmployerName,
+        estimatedPay: details.EstimatedPay,
+        tesUrl
+      });
+    },
+    [goTo, location.pathname, setShowTimeoutModal, setNavClickHandler]
+  );
+
+  const beginUpdateClaim = useCallback(() => {
+    goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.UPDATE_EMPLOYMENT);
+  }, [goTo]);
+
+  const beginAddPensionClaim = useCallback(() => {
+    goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.ADD_PENSION);
+  }, [goTo]);
+
+  const beginUpdatePensionClaim = useCallback(() => {
+    goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.UPDATE_PENSION);
+  }, [goTo]);
+
+  const redirectCurrentYearPage = useCallback(
+    (options: { backOverride?: string; replace?: boolean }) => {
+      setShowResolutionPage(false);
+      goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.SUMMARY, {
+        backOverride: options?.backOverride,
+        replace: options?.replace ?? false
+      });
+    },
+    [goTo, setShowResolutionPage]
+  );
+
+  const redirectAnnualCodingTemplatePage = useCallback(
+    ({ templateValue, pageName }: { templateValue: string; pageName: string }) => {
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.ANNUAL_CODING, { templateValue, pageName });
+    },
+    [goTo]
+  );
+
+  const redirectLandingPage = useCallback(() => {
+    goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.LANDING);
+  }, [goTo]);
+
+  const redirecLatestEventPage = useCallback(
+    (fromPage: string) => {
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.LATEST_EVENTS, { fromPage });
+    },
+    [goTo]
+  );
+
+  const redirectToAllIABDLandingPage = useCallback(
+    (fromPage: string) => {
+      goTo(PAYE_ROUTES.ALLOWED_REDIRECTION.OTHER_INCOME_ALLOWANCES, { comingFromPage: fromPage });
+    },
+    [goTo]
+  );
+
+  const redirectToUnderstandYourTaxPage = useCallback(() => {
+    goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.UNDERSTAND_YOUR_TAX);
+  }, [goTo]);
+
+  const redirectToViewTimelineDetailsPage = useCallback(
+    (fromPage: string = '', timelineDetails?: TimeLineEvent, eventType?: string) => {
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.VIEW_TIMELINE_DETAILS, {
+        comingFromPage: fromPage,
+        timelineDetails,
+        eventType
+      });
+    },
+    [goTo]
+  );
+
+  const redirectToDeductionExplainerpage = useCallback(
+    (comingFrom: string, explainerPage: string, sourceAmount: string) => {
+      const routeMap: Record<string, string> = {
+        winterFuelPaymentIABDPage: PAYE_ROUTES.RESTRICTED_REDIRECTION.WINTER_FUEL_PAYMENT,
+        untaxedsavingsinterest: PAYE_ROUTES.RESTRICTED_REDIRECTION.UNTAXED_SAVINGS_INTEREST,
+        winterfuelpaymentcharge: PAYE_ROUTES.RESTRICTED_REDIRECTION.WINTER_FUEL_PAYMENT_CHARGE
+      };
+      goTo(routeMap[explainerPage], {
+        comingFromPage: comingFrom,
+        sourceAmount
+      });
+    },
+    [goTo]
+  );
+
+  const handleViewAllDetailsClick = useCallback(
+    (detail: DetailsTypes) => {
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.VIEW_ALL_DETAILS, { details: detail });
+    },
+    [goTo]
+  );
+
+  const handleViewDetailsClick = useCallback(
+    (timeline: TimeLineEvent, event: string) => {
+      let url: string = PAYE_ROUTES.RESTRICTED_REDIRECTION.VIEW_TIMELINE_DETAILS;
+      if (timeline?.pyTemplateDataField === 'P2TAXCODE') {
+        url = PAYE_ROUTES.RESTRICTED_REDIRECTION.P2_EXPLAINER;
+      }
+      goTo(url, {
+        timelineDetails: timeline,
+        eventType: event,
+        comingFromPage: ''
+      });
+    },
+    [goTo]
+  );
+
+  const handleUnderstandYourTaxCodeClick = useCallback(
+    (understandYourTax: DetailsTypes, taxCode: string, fromPage: string) => {
+      goTo(
+        taxCode === 'defaulttaxcode'
+          ? PAYE_ROUTES.RESTRICTED_REDIRECTION.UNDERSTAND_YOUR_TAX
+          : PAYE_ROUTES.RESTRICTED_REDIRECTION.UNDERSTAND_YOUR_TAX_SPECIAL,
+        {
+          understandYourTaxDetails: understandYourTax,
+          fromPage
+        }
+      );
+    },
+    [goTo]
+  );
+
+  const handleDetailExplainerLinkClick = useCallback(
+    (e: MouseEvent, ComponentName: string) => {
+      e.preventDefault();
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.DETAIL_EXPLAINER, { componentName: ComponentName });
+    },
+    [goTo]
+  );
+
+  const handleMoreInformationClick = useCallback(
+    (ComponentName: string) => {
+      goTo(PAYE_ROUTES.RESTRICTED_REDIRECTION.WINTER_FUEL_PAYMENT, { ComponentName });
+    },
+    [goTo]
+  );
+
+  const fetchMDTPData = useCallback(async (link: string) => {
+    const parameters = { ContinueURL: link };
+    try {
+      return await PCore.getDataPageUtils().getPageDataAsync('D_PAYERedirectURL', 'root', parameters);
+    } catch (error) {
+      console.error('Error fetching employment tax data:', error);
+      return null;
+    }
+  }, []);
+
+  const handleLinkClick = useCallback(
+    async (link: string) => {
+      try {
+        const data = await fetchMDTPData(link);
+        window.location.href = appendLangParam(data.pyURLContent);
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    [fetchMDTPData]
+  );
+
+  return useMemo(
+    () => ({
+      startNow,
+      showPegaView,
+      resetAppDisplay,
+      getShutteredService,
+      beginClaim,
+      beginIntrruptionPage,
+      beginUpdateEstimatedTaxableIncomePage,
+      beginUpdateClaim,
+      beginAddPensionClaim,
+      beginUpdatePensionClaim,
+      redirectLandingPage,
+      redirectCurrentYearPage,
+      redirectToAllIABDLandingPage,
+      redirecLatestEventPage,
+      redirectToUnderstandYourTaxPage,
+      redirectToViewTimelineDetailsPage,
+      redirectAnnualCodingTemplatePage,
+      redirectToDeductionExplainerpage,
+      handleViewAllDetailsClick,
+      handleViewDetailsClick,
+      handleUnderstandYourTaxCodeClick,
+      handleDetailExplainerLinkClick,
+      handleMoreInformationClick,
+      handleLinkClick
+    }),
+    [
+      startNow, showPegaView, resetAppDisplay, getShutteredService, beginClaim, beginIntrruptionPage,
+      beginUpdateEstimatedTaxableIncomePage, beginUpdateClaim, beginAddPensionClaim, beginUpdatePensionClaim,
+      redirectLandingPage, redirectCurrentYearPage, redirectToAllIABDLandingPage, redirecLatestEventPage,
+      redirectToUnderstandYourTaxPage, redirectToViewTimelineDetailsPage, redirectAnnualCodingTemplatePage,
+      redirectToDeductionExplainerpage, handleViewAllDetailsClick, handleViewDetailsClick,
+      handleUnderstandYourTaxCodeClick, handleDetailExplainerLinkClick, handleMoreInformationClick, handleLinkClick
+    ]
+  );
+}
