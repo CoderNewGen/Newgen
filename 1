@@ -1,1 +1,79 @@
-https://chatgpt.com/share/69c85f61-5780-832a-ab95-a3ad1dd73fda
+// shutterGuard.ts
+export const SHUTTER_DETECTED_EVENT = 'ShutterGuard:Detected';
+
+interface ShutterGuardConfig {
+  featureID: string;                 // required, differs per app
+  featureType?: string;              // default 'Service'
+  dataViewName?: string;             // default 'D_ShutterLookup'
+  checkDebounceMs?: number;          // default 2000
+}
+
+let cfg: Required<ShutterGuardConfig>;
+let lastCheck = 0;
+let lastResult = false;
+
+async function fetchShutterStatus(): Promise<boolean> {
+  const sdkConfig = await getSdkConfig();
+  const url = new URL(
+    `${sdkConfig.serverConfig.infinityRestServerUrl}/app/${sdkConfig.serverConfig.appAlias}/api/application/v2/data_views/${cfg.dataViewName}`
+  ).href;
+  const parameters = new URLSearchParams(`{FeatureID: ${cfg.featureID}, FeatureType: ${cfg.featureType}}`);
+  const { invokeCustomRestApi } = PCore.getRestClient();
+  try {
+    const response = await invokeCustomRestApi(`${url}?dataViewParameters=${parameters}`, { method: 'GET' }, '');
+    return response.data.Shuttered;
+  } catch {
+    return false;
+  }
+}
+
+export async function getLatestShutterStatus(): Promise<boolean> {
+  const now = Date.now();
+  if (now - lastCheck < cfg.checkDebounceMs) return lastResult;
+  lastResult = await fetchShutterStatus();
+  lastCheck = now;
+  return lastResult;
+}
+
+function publishShutterDetected() {
+  PCore?.getPubSubUtils().publish(SHUTTER_DETECTED_EVENT);
+}
+
+export function installShutterGuard(config: ShutterGuardConfig) {
+  cfg = { featureType: 'Service', dataViewName: 'D_ShutterLookup', checkDebounceMs: 2000, ...config };
+
+  const originalGetDataPageUtils = PCore.getDataPageUtils.bind(PCore);
+  PCore.getDataPageUtils = () => wrapDataPageUtils(originalGetDataPageUtils());
+
+  const originalGetRestClient = PCore.getRestClient.bind(PCore);
+  PCore.getRestClient = () => wrapRestClient(originalGetRestClient(), cfg.dataViewName);
+}
+
+function wrapDataPageUtils(utils: any) {
+  ['getPageDataAsync', 'getDataAsync'].forEach(method => {
+    const original = utils[method].bind(utils);
+    utils[method] = async (...args: any[]) => {
+      if (await getLatestShutterStatus()) {
+        publishShutterDetected();
+        return Promise.reject(new Error(`Blocked ${method}, service shuttered: ${args[0]}`));
+      }
+      return original(...args);
+    };
+  });
+  return utils;
+}
+
+function wrapRestClient(client: any, exemptDataView: string) {
+  ['invokeRestApi', 'invokeCustomRestApi'].forEach(method => {
+    const original = client[method].bind(client);
+    client[method] = async (...args: any[]) => {
+      if (typeof args[0] === 'string' && args[0].includes(exemptDataView)) return original(...args);
+      if (await getLatestShutterStatus()) {
+        publishShutterDetected();
+        return Promise.reject(new Error(`Blocked ${method}, service shuttered`));
+      }
+      return original(...args);
+    };
+  });
+  return client;
+}
