@@ -1,0 +1,263 @@
+import { fetchShutterStatus } from './shutterLookup';
+import PAYE_ROUTES from '../../samples/AppSelector/payeRoutes';
+
+export const SHUTTER_DETECTED_EVENT = 'SHUTTER_DETECTED';
+
+interface ShutterGuardConfig {
+  featureID: string;
+  featureType?: string;
+  dataViewName?: string;
+  checkDebounceMs?: number;
+}
+
+const ALLOWED_DATA_VIEWS_WHEN_SHUTTERED = ['D_AuthServiceLogout', 'D_PAYERedirectURL', 'token'];
+
+let shutterConfig: Required<ShutterGuardConfig>;
+let lastCheck = 0;
+let lastResult = false;
+let shutterCheckPromise: Promise<boolean> | null = null;
+let isShutterGuardInstalled = false;
+
+// Global "latest known" bearer token, kept in sync by every setRequestHeader call,
+// including @pega/auth's own token-refresh retries. This is our source of truth
+// for what a REPLAYED request should carry.
+let latestAuthHeader: string | null = null;
+
+// Per-xhr bookkeeping needed to safely rebuild a request from scratch.
+const capturedHeaders = new WeakMap<XMLHttpRequest, Record<string, string>>();
+const xhrMeta = new WeakMap<XMLHttpRequest, { method: string; url: string; async: boolean }>();
+
+function publishShutterDetected(): void {
+  PCore.getPubSubUtils().publish(SHUTTER_DETECTED_EVENT);
+}
+
+export async function getLatestShutterStatus(): Promise<boolean> {
+  if (!shutterConfig) {
+    throw new Error('ShutterGuard must be installed before checking status');
+  }
+
+  const now = Date.now();
+
+  if (now - lastCheck < shutterConfig.checkDebounceMs) {
+    return lastResult;
+  }
+
+  if (shutterCheckPromise) {
+    return shutterCheckPromise;
+  }
+
+  shutterCheckPromise = (async () => {
+    try {
+      lastResult = await fetchShutterStatus({
+        featureID: shutterConfig.featureID,
+        featureType: shutterConfig.featureType,
+        dataViewName: shutterConfig.dataViewName
+      });
+
+      lastCheck = Date.now();
+
+      return lastResult;
+    } finally {
+      shutterCheckPromise = null;
+    }
+  })();
+
+  return shutterCheckPromise;
+}
+
+/**
+ * Rebuilds and sends a brand-new XHR carrying the CURRENT auth header, then
+ * transparently forwards its lifecycle back onto the original `xhr` object
+ * (which the caller — Axios's adapter — is holding a reference to and has
+ * already attached its own listeners to). This is necessary because a
+ * browser XHR's headers are immutable once set: you cannot "refresh" the
+ * Authorization header on the object that was paused mid-flight.
+ */
+function replayWithFreshHeaders(
+  originalOpen: typeof XMLHttpRequest.prototype.open,
+  originalSetRequestHeader: typeof XMLHttpRequest.prototype.setRequestHeader,
+  xhr: XMLHttpRequest,
+  body?: Document | XMLHttpRequestBodyInit | null
+): void {
+  const meta = xhrMeta.get(xhr);
+  const headers = capturedHeaders.get(xhr) ?? {};
+
+  if (!meta) {
+    // Shouldn't happen, but fail safe rather than silently dropping the request.
+    console.error('ShutterGuard: missing xhr metadata, cannot replay — aborting request');
+    return;
+  }
+
+  const freshXhr = new XMLHttpRequest();
+
+  originalOpen.call(freshXhr, meta.method, meta.url, meta.async);
+
+  Object.entries(headers).forEach(([name, value]) => {
+    const headerValue = name.toLowerCase() === 'authorization' && latestAuthHeader ? latestAuthHeader : value;
+    originalSetRequestHeader.call(freshXhr, name, headerValue);
+  });
+
+  // Proxy every read-side property Axios/Pega might inspect back onto `xhr`,
+  // so callers keep reading `xhr.status`, `xhr.responseText`, etc. as normal.
+  (['readyState', 'status', 'statusText', 'response', 'responseText', 'responseType', 'responseURL'] as const).forEach(
+    prop => {
+      Object.defineProperty(xhr, prop, {
+        configurable: true,
+        get: () => freshXhr[prop]
+      });
+    }
+  );
+
+  xhr.getAllResponseHeaders = () => freshXhr.getAllResponseHeaders();
+  xhr.getResponseHeader = (name: string) => freshXhr.getResponseHeader(name);
+  xhr.abort = () => freshXhr.abort();
+
+  // Forward lifecycle events. Native XHR event-handler IDL attributes
+  // (onreadystatechange, onload, etc.) fire from dispatchEvent just like any
+  // addEventListener-registered listener, so a single dispatchEvent per type
+  // covers both styles Axios/Pega might use.
+  (['readystatechange', 'load', 'error', 'abort', 'timeout', 'loadstart', 'loadend', 'progress'] as const).forEach(
+    type => {
+      freshXhr.addEventListener(type, () => {
+        xhr.dispatchEvent(new Event(type));
+      });
+    }
+  );
+
+  console.log('[REPLAY WITH FRESH TOKEN]', meta.url, 'time:', Date.now());
+
+  freshXhr.send(body);
+}
+
+function configureXHRInterceptor(): void {
+  const originalSetRequestHeader = XMLHttpRequest.prototype.setRequestHeader;
+
+  XMLHttpRequest.prototype.setRequestHeader = function (header: string, value: string) {
+    const xhr = this as XMLHttpRequest & { __shutterUrl?: string };
+
+    const headers = capturedHeaders.get(this) ?? {};
+    headers[header.toLowerCase()] = value;
+    capturedHeaders.set(this, headers);
+
+    if (header.toLowerCase() === 'authorization') {
+      latestAuthHeader = value;
+
+      const tokenSnippet = value.length > 80 ? value.substring(0, 40) + '...' + value.substring(value.length - 20) : value;
+
+      console.log('[AUTH HEADER]', xhr.__shutterUrl, 'time:', Date.now(), tokenSnippet);
+    }
+
+    return originalSetRequestHeader.call(this, header, value);
+  };
+
+  const originalOpen = XMLHttpRequest.prototype.open;
+  const originalSend = XMLHttpRequest.prototype.send;
+
+  XMLHttpRequest.prototype.open = function (
+    method: string,
+    url: string,
+    async?: boolean,
+    username?: string | null,
+    password?: string | null
+  ) {
+    (this as XMLHttpRequest & { __shutterUrl?: string }).__shutterUrl = url;
+    xhrMeta.set(this, { method, url, async: async ?? true });
+
+    return originalOpen.call(this, method, url, async, username, password);
+  };
+
+  XMLHttpRequest.prototype.send = function (body?: Document | XMLHttpRequestBodyInit | null) {
+    const xhr = this as XMLHttpRequest & { __shutterUrl?: string };
+
+    const url = xhr.__shutterUrl ?? '';
+    console.log('[SEND]', url, 'readyState:', this.readyState);
+
+    const isShutterLookup = url.includes('data_views') && url.includes(shutterConfig.dataViewName);
+
+    const isPegaApi = url.includes('/api/application/');
+    const onShutterPage = window.location.pathname.endsWith(PAYE_ROUTES.SHUTTER);
+
+    const isAllowedDataView = ALLOWED_DATA_VIEWS_WHEN_SHUTTERED.some(request => url.includes(request));
+
+    const isAllowedWhenShuttered = isAllowedDataView || (url.includes('D_OnClientAction') && onShutterPage);
+
+    if (isShutterLookup) {
+      return originalSend.call(xhr, body);
+    }
+
+    const isTokenRequest = url.includes('/api/oauth2/v1/token');
+
+    if (isTokenRequest) {
+      return originalSend.call(xhr, body);
+    }
+
+    if (!isPegaApi) {
+      return originalSend.call(xhr, body);
+    }
+
+    if (isAllowedWhenShuttered) {
+      return originalSend.call(xhr, body);
+    }
+
+    // Snapshot the token this xhr was stamped with BEFORE we started waiting.
+    const capturedAuthHeader = capturedHeaders.get(xhr)?.['authorization'];
+
+    xhr.addEventListener('readystatechange', () => {
+      if (xhr.readyState === 4) {
+        console.log('[RESPONSE]', url, 'status:', xhr.status);
+      }
+    });
+
+    getLatestShutterStatus()
+      .then(shuttered => {
+        console.log('[SHUTTER RESOLVED]', url, 'time:', Date.now(), 'latestAuthHeader:', latestAuthHeader);
+
+        if (shuttered) {
+          publishShutterDetected();
+
+          console.warn(`Shutter blocked request: ${url}`);
+
+          xhr.abort();
+          return;
+        }
+
+        // If the token changed while we were waiting on the shutter check
+        // (e.g. a 401-triggered refresh happened on another in-flight call),
+        // this xhr's headers are stale and unusable — rebuild from scratch.
+        const tokenRotated = !!latestAuthHeader && !!capturedAuthHeader && latestAuthHeader !== capturedAuthHeader;
+
+        if (tokenRotated) {
+          replayWithFreshHeaders(originalOpen, originalSetRequestHeader, xhr, body);
+          return;
+        }
+
+        console.log('[ACTUAL SEND]', url, 'time:', Date.now(), 'latestAuthHeader:', latestAuthHeader);
+
+        originalSend.call(xhr, body);
+      })
+      .catch(error => {
+        console.error('Shutter check failed, allowing request', error);
+
+        console.log('[ACTUAL SEND AFTER ERROR]', url, 'time:', Date.now(), 'latestAuthHeader:', latestAuthHeader);
+
+        originalSend.call(xhr, body);
+      });
+  };
+}
+
+export function installShutterGuard(config: ShutterGuardConfig): void {
+  if (isShutterGuardInstalled) {
+    return;
+  }
+
+  shutterConfig = {
+    featureType: 'Service',
+    dataViewName: 'D_ShutterLookup',
+    checkDebounceMs: 3000,
+    ...config
+  };
+
+  configureXHRInterceptor();
+
+  isShutterGuardInstalled = true;
+}
